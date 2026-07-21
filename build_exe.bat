@@ -2,14 +2,37 @@
 REM ============================================================
 REM  Chaqiruv.exe yasash skripti (Windows uchun)
 REM ============================================================
-REM  Bu faylni Windows kompyuterda ikki marta bosing yoki
-REM  buyruq satridan ishga tushiring:  build_exe.bat
+REM  Bu faylni chaqiruv.py bilan BIR PAPKADA saqlang va
+REM  ikki marta bosing (yoki cmd dan ishga tushiring).
 REM
 REM  Natija:  dist\Chaqiruv.exe  (bitta mustaqil fayl)
-REM  Uni Python o'rnatilmagan kompyuterда ham ishlatsa bo'ladi.
 REM ============================================================
 
+REM --- Skriptning o'z papkasiga o'tamiz (juda muhim!) ---
+cd /d "%~dp0"
+
 echo.
+echo  Ishchi papka:  %CD%
+echo.
+
+REM --- chaqiruv.py shu papkada bormi tekshiramiz ---
+if not exist "chaqiruv.py" (
+    echo ============================================================
+    echo  XATO: Shu papkada "chaqiruv.py" fayli topilmadi.
+    echo.
+    echo  Sabab: build_exe.bat "chaqiruv.py" bilan bir papkada
+    echo         bo'lishi kerak.
+    echo.
+    echo  Yechim:
+    echo   1) Loyihani to'liq yuklab oling (Code -^> Download ZIP)
+    echo      va ZIP ichidan HAMMA fayllarni bitta papkaga chiqaring.
+    echo   2) chaqiruv.py va build_exe.bat bir papkada turishi kerak.
+    echo   3) Shu papkadagi build_exe.bat ni qayta ishga tushiring.
+    echo ============================================================
+    pause
+    exit /b 1
+)
+
 echo [1/3] Python tekshirilmoqda...
 python --version
 if errorlevel 1 (
@@ -39,7 +62,7 @@ if errorlevel 1 (
 
 echo.
 echo ============================================================
-echo  TAYYOR!  Fayl:  dist\Chaqiruv.exe
-echo  Uni Direktor va Anvar kompyuterlariga nusxalang.
+echo  TAYYOR!  Fayl:  %CD%\dist\Chaqiruv.exe
+echo  Uni Direktor va Hodim kompyuterlariga nusxalang.
 echo ============================================================
 pause
