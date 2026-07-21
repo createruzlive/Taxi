@@ -29,9 +29,11 @@ import socket
 import sys
 import threading
 
-DEFAULT_PORT = 50555
+DEFAULT_PORT = 50555          # Direktor -> Anvar (chaqiruv)
+CONFIRM_PORT = DEFAULT_PORT + 1  # Anvar -> Direktor (tasdiq)
 DEFAULT_MESSAGE = "Oldimga kir"
 SENDER_NAME = "Direktor Sardor"
+ANVAR_NAME = "Anvar"
 
 
 # ---------------------------------------------------------------------------
@@ -51,8 +53,16 @@ def get_local_ip():
 
 
 def send_call(host, port, message, sender=SENDER_NAME, timeout=5):
-    """Anvarga xabar yuboradi. (True, 'OK') yoki (False, xato) qaytaradi."""
-    payload = json.dumps({"message": message, "sender": sender}).encode("utf-8")
+    """Anvarga xabar yuboradi. (True, 'OK') yoki (False, xato) qaytaradi.
+
+    Payload ichiga direktorning IP'si (sender_ip) ham qo'shiladi — Anvar
+    "Hop, boraman" tugmasini bosganда shu manzilga tasdiq qaytaradi.
+    """
+    payload = json.dumps({
+        "message": message,
+        "sender": sender,
+        "sender_ip": get_local_ip(),
+    }).encode("utf-8")
     try:
         with socket.create_connection((host, port), timeout=timeout) as s:
             s.sendall(payload)
@@ -63,6 +73,18 @@ def send_call(host, port, message, sender=SENDER_NAME, timeout=5):
             except socket.timeout:
                 reply = b""
         return True, reply.decode("utf-8", errors="replace")
+    except (ConnectionRefusedError, socket.timeout, OSError) as e:
+        return False, str(e)
+
+
+def send_confirm(host, port, text, who=ANVAR_NAME, timeout=5):
+    """Anvardan direktorga tasdiq yuboradi (masalan 'Hop, boraman')."""
+    payload = json.dumps({"confirm": text, "from": who}).encode("utf-8")
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as s:
+            s.sendall(payload)
+            s.shutdown(socket.SHUT_WR)
+        return True, None
     except (ConnectionRefusedError, socket.timeout, OSError) as e:
         return False, str(e)
 
@@ -90,13 +112,14 @@ def _listener_thread(sock, msg_queue):
             except socket.timeout:
                 pass
 
-            text, sender = DEFAULT_MESSAGE, addr[0]
+            text, sender, sender_ip = DEFAULT_MESSAGE, addr[0], addr[0]
             payload = data.decode("utf-8", errors="replace").strip()
             if payload:
                 try:
                     obj = json.loads(payload)
                     text = obj.get("message", DEFAULT_MESSAGE)
                     sender = obj.get("sender", addr[0])
+                    sender_ip = obj.get("sender_ip", addr[0])
                 except (ValueError, AttributeError):
                     text = payload
             try:
@@ -104,11 +127,15 @@ def _listener_thread(sock, msg_queue):
             except OSError:
                 pass
             print(f"[+] Chaqiruv keldi: '{text}'  (yuboruvchi: {sender})")
-            msg_queue.put((text, sender))
+            msg_queue.put((text, sender, sender_ip))
 
 
-def _show_popup(text, sender):
-    """Diqqatni tortadigan qizil pop-up oyna (asosiy oqimda chaqirilsin)."""
+def _show_popup(text, sender, sender_ip):
+    """Diqqatni tortadigan qizil pop-up oyna (asosiy oqimda chaqirilsin).
+
+    "Hop, boraman" tugmasi bosilganда direktorga (sender_ip:CONFIRM_PORT)
+    tasdiq yuboriladi va oynada natija ko'rsatiladi.
+    """
     import tkinter as tk
 
     root = tk.Tk()
@@ -117,7 +144,7 @@ def _show_popup(text, sender):
     root.configure(bg="#b30000")
     root.resizable(False, False)
 
-    w, h = 460, 260
+    w, h = 480, 320
     root.update_idletasks()
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
     root.geometry(f"{w}x{h}+{(sw - w)//2}+{(sh - h)//3}")
@@ -128,16 +155,46 @@ def _show_popup(text, sender):
         pass
 
     frame = tk.Frame(root, bg="#b30000")
-    frame.pack(expand=True, fill="both", padx=20, pady=20)
+    frame.pack(expand=True, fill="both", padx=20, pady=18)
     tk.Label(frame, text="📢  " + text, font=("Arial", 28, "bold"),
-             fg="white", bg="#b30000").pack(pady=(10, 6))
+             fg="white", bg="#b30000").pack(pady=(6, 4))
     tk.Label(frame, text=f"Yuboruvchi: {sender}", font=("Arial", 13),
-             fg="#ffe0e0", bg="#b30000").pack(pady=(0, 18))
-    btn = tk.Button(frame, text="Tushunarli — Kelaman", font=("Arial", 14, "bold"),
-                    bg="white", fg="#b30000", activebackground="#f0f0f0",
-                    relief="flat", padx=20, pady=8, command=root.destroy)
-    btn.pack()
-    root.after(100, lambda: (root.focus_force(), btn.focus_set()))
+             fg="#ffe0e0", bg="#b30000").pack(pady=(0, 10))
+
+    status = tk.Label(frame, text="", font=("Arial", 11, "bold"),
+                      fg="#fff2b0", bg="#b30000")
+    status.pack(pady=(0, 8))
+
+    btn_row = tk.Frame(frame, bg="#b30000")
+    btn_row.pack()
+
+    def confirm(answer):
+        """Tasdiqni direktorga yuboradi va oynani yopadi."""
+        status.config(text="Yuborilmoqda...", fg="#fff2b0")
+        root.update_idletasks()
+        ok, err = send_confirm(sender_ip, CONFIRM_PORT, answer)
+        if ok:
+            status.config(text="✓ Direktorga yuborildi", fg="#c8f7c8")
+        else:
+            # Direktor javob kutmayotgan bo'lsa ham Anvarni to'smaymiz
+            status.config(text="Direktorga yetkazib bo'lmadi", fg="#ffd0d0")
+        root.after(700, root.destroy)
+
+    yes_btn = tk.Button(btn_row, text="✅  Hop, boraman",
+                        font=("Arial", 15, "bold"),
+                        bg="white", fg="#0a7d0a", activebackground="#eaffea",
+                        relief="flat", padx=18, pady=9,
+                        command=lambda: confirm("Hop, boraman"))
+    yes_btn.pack(side="left", padx=6)
+
+    busy_btn = tk.Button(btn_row, text="⏳  Band edim, keyinroq",
+                         font=("Arial", 13),
+                         bg="#7a0000", fg="white", activebackground="#5c0000",
+                         relief="flat", padx=14, pady=9,
+                         command=lambda: confirm("Band edim, keyinroq boraman"))
+    busy_btn.pack(side="left", padx=6)
+
+    root.after(100, lambda: (root.focus_force(), yes_btn.focus_set()))
     root.mainloop()
 
 
@@ -185,8 +242,8 @@ def run_anvar(port=DEFAULT_PORT):
     def poll():
         try:
             while True:
-                text, sender = msg_queue.get_nowait()
-                _show_popup(text, sender)
+                text, sender, sender_ip = msg_queue.get_nowait()
+                _show_popup(text, sender, sender_ip)
         except queue.Empty:
             pass
         root.after(300, poll)
@@ -201,15 +258,64 @@ def run_anvar(port=DEFAULT_PORT):
 # ---------------------------------------------------------------------------
 # DIREKTOR tomoni (yuboruvchi GUI)
 # ---------------------------------------------------------------------------
+def _confirm_listener(sock, confirm_queue):
+    """Anvardan kelgan tasdiqni (masalan 'Hop, boraman') qabul qiladi."""
+    while True:
+        try:
+            conn, addr = sock.accept()
+        except OSError:
+            break
+        with conn:
+            data = b""
+            conn.settimeout(5)
+            try:
+                while True:
+                    chunk = conn.recv(1024)
+                    if not chunk:
+                        break
+                    data += chunk
+                    if len(data) > 65536:
+                        break
+            except socket.timeout:
+                pass
+            text, who = "javob keldi", addr[0]
+            payload = data.decode("utf-8", errors="replace").strip()
+            if payload:
+                try:
+                    obj = json.loads(payload)
+                    text = obj.get("confirm", text)
+                    who = obj.get("from", addr[0])
+                except (ValueError, AttributeError):
+                    text = payload
+            print(f"[+] Anvar javobi: '{text}'  ({who})")
+            confirm_queue.put((text, who))
+
+
 def run_direktor(prefill_ip=""):
     import tkinter as tk
     from tkinter import messagebox
+
+    # Anvar tasdiqini kutish uchun fon listener'ini ishga tushiramiz.
+    # (Port band bo'lsa ham dastur ishlashда davom etadi — faqat tasdiq
+    #  ko'rinmaydi.)
+    confirm_queue = queue.Queue()
+    csock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    csock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    confirm_active = True
+    try:
+        csock.bind(("0.0.0.0", CONFIRM_PORT))
+        csock.listen(5)
+        threading.Thread(target=_confirm_listener, args=(csock, confirm_queue),
+                         daemon=True).start()
+    except OSError as e:
+        confirm_active = False
+        print(f"[!] Tasdiq portини ochib bo'lmadi ({CONFIRM_PORT}): {e}")
 
     root = tk.Tk()
     root.title("Direktor — Anvarni chaqirish")
     root.configure(bg="#1e3d59")
     root.resizable(False, False)
-    w, h = 420, 320
+    w, h = 420, 400
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
     root.geometry(f"{w}x{h}+{(sw - w)//2}+{(sh - h)//3}")
 
@@ -257,9 +363,43 @@ def run_direktor(prefill_ip=""):
     tk.Button(fr, text="📢  CHAQIRISH", font=("Arial", 16, "bold"),
               bg="#e63946", fg="white", activebackground="#c92d3a",
               relief="flat", padx=20, pady=12, command=on_send).pack(fill="x",
-                                                                     pady=(6, 0))
+                                                                     pady=(6, 10))
+
+    # Anvar javobi shu yerda chiqadi
+    tk.Frame(fr, bg="#345", height=1).pack(fill="x", pady=(4, 8))
+    tk.Label(fr, text="Anvar javobi:", font=("Arial", 11),
+             fg="#cfe0ee", bg="#1e3d59").pack(anchor="w")
+    reply_lbl = tk.Label(
+        fr,
+        text=("— (kutilmoqda)" if confirm_active
+              else "⚠ Javob porti band — tasdiq ko'rinmaydi"),
+        font=("Arial", 13, "bold"),
+        fg="#9fb8cc", bg="#1e3d59", wraplength=360, justify="left",
+    )
+    reply_lbl.pack(anchor="w", pady=(2, 0))
+
+    def poll_confirm():
+        try:
+            while True:
+                text, who = confirm_queue.get_nowait()
+                reply_lbl.config(text=f"✅ {who}: {text}", fg="#9be89b")
+                try:
+                    root.bell()
+                except Exception:
+                    pass
+        except queue.Empty:
+            pass
+        root.after(300, poll_confirm)
+
+    root.after(300, poll_confirm)
     root.bind("<Return>", lambda e: on_send())
-    root.mainloop()
+    try:
+        root.mainloop()
+    finally:
+        try:
+            csock.close()
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------

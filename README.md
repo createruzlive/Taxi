@@ -27,6 +27,20 @@ faqat **Python 3** bo'lsa yetarli (tkinter va socket standart kutubxonada).
 2. Direktor `direktor_call.py` dagi **CHAQIRISH** tugmasini bosadi.
 3. Xabar tarmoq orqali Anvar kompyuteriga boradi.
 4. Anvar ekranida darhol **"Oldimga kir"** pop-up oynasi chiqadi (ovoz bilan).
+5. Anvar pop-up'даги **"✅ Hop, boraman"** (yoki "⏳ Band edim, keyinroq")
+   tugmasini bosadi — bu **tasdiq direktorga qaytadi** va direktor oynasида
+   "✅ Anvar: Hop, boraman" bo'lib ko'rinadi (ovoz bilan).
+
+Ya'ni aloqa **ikki tomonlama**: direktor chaqiradi, Anvar javob beradi.
+
+### Portlar
+
+| Port    | Yo'nalish              | Vazifasi                    |
+|---------|------------------------|-----------------------------|
+| `50555` | Direktor → Anvar       | chaqiruv ("Oldimga kir")    |
+| `50556` | Anvar → Direktor       | tasdiq ("Hop, boraman")     |
+
+Firewall (Windows Defender) so'rasa, ikkala portga ham ruxsat bering.
 
 ## Eng oson yo'l — bitta fayl (`chaqiruv.py`)
 

@@ -24,7 +24,9 @@ import socket
 import threading
 
 DEFAULT_PORT = 50555
+CONFIRM_PORT = DEFAULT_PORT + 1   # Anvar -> Direktor (tasdiq)
 DEFAULT_MESSAGE = "Oldimga kir"
+ANVAR_NAME = "Anvar"
 
 
 def get_local_ip():
@@ -41,7 +43,20 @@ def get_local_ip():
     return ip
 
 
-def show_popup(text, sender):
+def send_confirm(host, port, text, who=ANVAR_NAME, timeout=5):
+    """Anvardan direktorga tasdiq yuboradi (masalan 'Hop, boraman')."""
+    import json as _json
+    payload = _json.dumps({"confirm": text, "from": who}).encode("utf-8")
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as s:
+            s.sendall(payload)
+            s.shutdown(socket.SHUT_WR)
+        return True, None
+    except (ConnectionRefusedError, socket.timeout, OSError) as e:
+        return False, str(e)
+
+
+def show_popup(text, sender, sender_ip):
     """
     tkinter yordamida diqqatni tortadigan pop-up oyna chiqaradi.
     Bu funksiya asosiy (main) oqimda chaqirilishi kerak — GUI shu talab qiladi.
@@ -56,7 +71,7 @@ def show_popup(text, sender):
     root.configure(bg="#b30000")
     root.resizable(False, False)
 
-    w, h = 460, 260
+    w, h = 480, 320
     root.update_idletasks()
     sw = root.winfo_screenwidth()
     sh = root.winfo_screenheight()
@@ -71,7 +86,7 @@ def show_popup(text, sender):
         pass
 
     frame = tk.Frame(root, bg="#b30000")
-    frame.pack(expand=True, fill="both", padx=20, pady=20)
+    frame.pack(expand=True, fill="both", padx=20, pady=18)
 
     tk.Label(
         frame,
@@ -79,7 +94,7 @@ def show_popup(text, sender):
         font=("Arial", 28, "bold"),
         fg="white",
         bg="#b30000",
-    ).pack(pady=(10, 6))
+    ).pack(pady=(6, 4))
 
     tk.Label(
         frame,
@@ -87,24 +102,43 @@ def show_popup(text, sender):
         font=("Arial", 13),
         fg="#ffe0e0",
         bg="#b30000",
-    ).pack(pady=(0, 18))
+    ).pack(pady=(0, 10))
 
-    btn = tk.Button(
-        frame,
-        text="Tushunarli — Kelaman",
-        font=("Arial", 14, "bold"),
-        bg="white",
-        fg="#b30000",
-        activebackground="#f0f0f0",
-        relief="flat",
-        padx=20,
-        pady=8,
-        command=root.destroy,
+    status = tk.Label(frame, text="", font=("Arial", 11, "bold"),
+                      fg="#fff2b0", bg="#b30000")
+    status.pack(pady=(0, 8))
+
+    btn_row = tk.Frame(frame, bg="#b30000")
+    btn_row.pack()
+
+    def confirm(answer):
+        """Tasdiqni direktorga yuboradi va oynani yopadi."""
+        status.config(text="Yuborilmoqda...", fg="#fff2b0")
+        root.update_idletasks()
+        ok, _ = send_confirm(sender_ip, CONFIRM_PORT, answer)
+        status.config(
+            text="✓ Direktorga yuborildi" if ok else "Direktorga yetkazib bo'lmadi",
+            fg="#c8f7c8" if ok else "#ffd0d0",
+        )
+        root.after(700, root.destroy)
+
+    yes_btn = tk.Button(
+        btn_row, text="✅  Hop, boraman", font=("Arial", 15, "bold"),
+        bg="white", fg="#0a7d0a", activebackground="#eaffea",
+        relief="flat", padx=18, pady=9,
+        command=lambda: confirm("Hop, boraman"),
     )
-    btn.pack()
+    yes_btn.pack(side="left", padx=6)
+
+    tk.Button(
+        btn_row, text="⏳  Band edim, keyinroq", font=("Arial", 13),
+        bg="#7a0000", fg="white", activebackground="#5c0000",
+        relief="flat", padx=14, pady=9,
+        command=lambda: confirm("Band edim, keyinroq boraman"),
+    ).pack(side="left", padx=6)
 
     # Oyna paydo bo'lganда fokusni oladi
-    root.after(100, lambda: (root.focus_force(), btn.focus_set()))
+    root.after(100, lambda: (root.focus_force(), yes_btn.focus_set()))
     root.mainloop()
 
 
@@ -131,12 +165,14 @@ def listener_thread(sock, msg_queue):
 
             text = DEFAULT_MESSAGE
             sender = addr[0]
+            sender_ip = addr[0]
             payload = data.decode("utf-8", errors="replace").strip()
             if payload:
                 try:
                     obj = json.loads(payload)
                     text = obj.get("message", DEFAULT_MESSAGE)
                     sender = obj.get("sender", addr[0])
+                    sender_ip = obj.get("sender_ip", addr[0])
                 except (ValueError, AttributeError):
                     text = payload  # oddiy matn ham qabul qilinadi
 
@@ -147,7 +183,7 @@ def listener_thread(sock, msg_queue):
                 pass
 
             print(f"[+] Chaqiruv keldi: '{text}'  (yuboruvchi: {sender})")
-            msg_queue.put((text, sender))
+            msg_queue.put((text, sender, sender_ip))
 
 
 def main():
@@ -181,8 +217,8 @@ def main():
     # shu yerda navbatдан olib ko'rsatamiz.
     try:
         while True:
-            text, sender = msg_queue.get()  # xabar kelguncha kutadi
-            show_popup(text, sender)
+            text, sender, sender_ip = msg_queue.get()  # xabar kelguncha kutadi
+            show_popup(text, sender, sender_ip)
     except KeyboardInterrupt:
         print("\n[i] To'xtatildi.")
     finally:
