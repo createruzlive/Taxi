@@ -52,18 +52,20 @@ if errorlevel 1 (
 )
 
 echo.
-echo ============================================================
-echo  TAYYOR!  Endi kompyuter yoqilganda Chaqiruv o'zi
-echo  "Hodim" rejimida ishga tushadi.
-echo.
-echo  Hoziroq sinab ko'rish uchun dasturni ochamizmi? (ha uchun
-echo  biror tugma bosing, kerak bo'lmasa oynani yoping)
-echo ============================================================
-pause
+echo  Hodim dasturi hoziroq fonda ishga tushirilmoqda...
 start "" "%EXE%" hodim
 
 echo.
-echo  Avtostartni O'CHIRISH kerak bo'lsa: Win+R -^> shell:startup
-echo  -^> ochilgan papkadan "Chaqiruv" yorlig'ini o'chiring.
+echo ============================================================
+echo  TAYYOR!  Endi kompyuter yoqilganda Chaqiruv o'zi
+echo  "Hodim" rejimida FONDA ishga tushadi (oyna ko'rinmaydi).
+echo  Direktor xabar yuborganda ekranda pop-up chiqadi.
 echo.
+echo  Boshqa hech narsa qilish shart emas.
+echo.
+echo  O'CHIRISH kerak bo'lsa: Win+R -^> shell:startup
+echo  -^> ochilgan papkadan "Chaqiruv" yorlig'ini o'chiring.
+echo  (Fonda ishlayotganini To'xtatish: Vazifalar dispetcheri
+echo   -^> Chaqiruv.exe -^> Vazifani tugatish)
+echo ============================================================
 pause

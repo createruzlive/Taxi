@@ -82,6 +82,21 @@ papkада** turиши kerak.
 
 ---
 
+## Rol qulfi va direktor paroli (MUHIM)
+
+- Kompyuter **bir marta** rol tanlaydi. "Hodim" tanlansa, o'sha kompyuter
+  **doim hodim** bo'lib qoladi — qayta so'ramaydi va direktor bo'la olmaydi.
+- **Direktor rejimi parol bilan himoyalangan.** Faqat parolni bilgan odam
+  xabar yubora oladi. Shu tufayli hodimlar direktor nomidan xabar yubora
+  olmaydi.
+- Parol `chaqiruv.py` ичидаги `DIREKTOR_PAROL` da. **Exe yasashдан oldin uni
+  o'zgartiring** (masalan `DIREKTOR_PAROL = "SizningMaxfiySoz"`), so'ng exe
+  yasang va parolни maxfiy saqlang.
+- Rol `%APPDATA%\Chaqiruv\rol.cfg` da saqlanadi.
+
+> Hodim rejimida **oyna ko'rinmaydi** — dastur fonda tinch ishlaydi va faqat
+> direktor xabar yuborganda pop-up chiqadi.
+
 ## Avtomatik ishga tushirish (hodimlar uchun)
 
 Hodimlar har kuni qo'lda ochishni unutmasligi uchun, kompyuter yoqilganда

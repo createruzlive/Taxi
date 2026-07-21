@@ -18,6 +18,12 @@ import sys, os
 
 DEF_MSG = "Oldimga kir"
 
+# ===== DIREKTOR PAROLI =====
+# MUHIM: exe yasashдан oldин buni O'ZGARTIRING va maxfiy saqlang!
+# Faqat shu parolни bilган odam direktor rejimига kira olади.
+# (Hodimlar bunи bilмаса, direktor nomidan xabar yubora olмайди.)
+DIREKTOR_PAROL = "parol123"
+
 # tez ishlatiladigan xabarlar (direktor tugmadan tanlaydi)
 tayyor_xabarlar = [
     "Oldimga kir",
@@ -58,6 +64,43 @@ else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 HODIMLAR_FAYL = os.path.join(APP_DIR, "hodimlar.json")
+
+
+# rol qayerga saqlanadi (%APPDATA%\Chaqiruv, yozishga ruxsat bor)
+def _cfg_papka():
+    d = os.environ.get("APPDATA")
+    if not d:
+        d = APP_DIR
+    p = os.path.join(d, "Chaqiruv")
+    try:
+        os.makedirs(p, exist_ok=True)
+    except:
+        p = APP_DIR
+    return p
+
+ROL_FAYL = os.path.join(_cfg_papka(), "rol.cfg")
+
+
+def rolni_oqi():
+    # bu komp qaysi rolда? 'hodim' / 'direktor' / None
+    try:
+        f = open(ROL_FAYL, "r", encoding="utf-8")
+        r = f.read().strip().lower()
+        f.close()
+        if r in ("hodim", "direktor"):
+            return r
+    except:
+        pass
+    return None
+
+
+def rolni_saqla(r):
+    try:
+        f = open(ROL_FAYL, "w", encoding="utf-8")
+        f.write(r)
+        f.close()
+    except:
+        print("rolni saqlab bo'lmadi")
 
 
 def hodimlarni_oqi():
@@ -258,24 +301,11 @@ def hodim_rejim():
     stop = threading.Event()
     threading.Thread(target=ozini_elon_qil, args=(stop,), daemon=True).start()
 
+    # hodim rejimi FONDA ishlaydi - oyna ko'rinmaydi.
+    # faqat direktor xabar yuborganda pop-up chiqadi.
     r = tk.Tk()
-    r.title("Hodim - kutish rejimi")
-    r.configure(bg="#1e3d59")
-    r.resizable(False, False)
-    w, h = 440, 210
-    sw = r.winfo_screenwidth(); sh = r.winfo_screenheight()
-    r.geometry("%dx%d+%d+%d" % (w, h, (sw-w)//2, (sh-h)//3))
-    fr = tk.Frame(r, bg="#1e3d59")
-    fr.pack(expand=True, fill="both", padx=20, pady=20)
-    tk.Label(fr, text="✅ Xabarni kutmoqda...", font=("Arial", 18, "bold"),
-             fg="white", bg="#1e3d59").pack(pady=(6, 12))
-    tk.Label(fr, text="Komp: " + komp_nomi(), font=("Arial", 12),
-             fg="#cfe0ee", bg="#1e3d59").pack()
-    tk.Label(fr, text="IP: " + ip + "  (port " + str(PORT) + ")",
-             font=("Arial", 12), fg="#cfe0ee", bg="#1e3d59").pack()
-    tk.Label(fr, text="Bu oynani yopmang. Direktor sizni ro'yxatda avtomatik ko'radi.",
-             font=("Arial", 10), fg="#9fb8cc", bg="#1e3d59",
-             wraplength=380).pack(pady=(12, 0))
+    r.title("Chaqiruv")
+    r.withdraw()   # oynani yashiramiz
 
     def tekshir():
         try:
@@ -608,7 +638,11 @@ def tanlov():
     tk.Label(fr, text="CHAQIRUV tizimi", font=("Arial", 22, "bold"), fg="white",
              bg="#12263a").pack(pady=(0, 6))
     tk.Label(fr, text="Bu kompyuterda kim ishlaydi?", font=("Arial", 12),
-             fg="#9fb8cc", bg="#12263a").pack(pady=(0, 22))
+             fg="#9fb8cc", bg="#12263a").pack(pady=(0, 6))
+    tk.Label(fr, text="DIQQAT: tanlov bir marta! Keyin o'zgarmaydi.\n"
+                      "Direktor uchun parol so'raladi.",
+             font=("Arial", 9), fg="#e8a33d", bg="#12263a",
+             justify="center").pack(pady=(0, 16))
 
     natija = {"r": None}
 
@@ -627,22 +661,63 @@ def tanlov():
     return natija["r"]
 
 
+def direktor_kirish():
+    # direktor rejimiga faqat parol bilan kiriladi
+    import tkinter as tk
+    from tkinter import simpledialog, messagebox
+    root = tk.Tk()
+    root.withdraw()
+    p = simpledialog.askstring("Direktor paroli", "Parolni kiriting:",
+                               show="*", parent=root)
+    if p is None:
+        root.destroy()
+        return False
+    if p == DIREKTOR_PAROL:
+        root.destroy()
+        return True
+    messagebox.showerror("Xato", "Parol noto'g'ri! Direktor rejimi ochilmaydi.",
+                         parent=root)
+    root.destroy()
+    return False
+
+
 def main():
     a = sys.argv[1:]
     rol = a[0].lower() if len(a) > 0 else None
 
+    # terminaldan to'g'ridan-to'g'ri (masalan avtostart 'hodim')
     if rol in ("hodim", "anvar", "h"):
+        rolni_saqla("hodim")
         hodim_rejim()
         return
     if rol in ("direktor", "d"):
+        if not direktor_kirish():
+            return
         p = a[1] if len(a) > 1 else ""
         direktor_rejim(p)
         return
 
+    # argument yo'q -> avval saqlangan rolni qaraymiz
+    saqlangan = rolni_oqi()
+    if saqlangan == "hodim":
+        # bu komp hodim - boshqa hech narsa so'ramaymiz, fonda ishlaymiz
+        hodim_rejim()
+        return
+    if saqlangan == "direktor":
+        if not direktor_kirish():
+            return
+        direktor_rejim()
+        return
+
+    # birinchi marta ochilyapti - rol tanlanadi
     x = tanlov()
     if x == "hodim":
+        rolni_saqla("hodim")   # endi bu komp doim hodim
         hodim_rejim()
     elif x == "direktor":
+        if not direktor_kirish():
+            return
+        rolni_saqla("direktor")
         direktor_rejim()
     else:
         print("hech nima tanlanmadi")
