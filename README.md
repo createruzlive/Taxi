@@ -1,79 +1,100 @@
-# Direktor → Anvar chaqiruv tizimi (telefon/SMS'siz)
+# CHAQIRUV — tashkilot ichki xabar tizimi (telefon/SMS'siz)
 
-Direktor Sardor yordamchisi Anvarni **telefon yoki SMS ishlatmasdan** chaqirishi
-uchun oddiy dastur. Direktor kompyuteridan tugma bosilganda, Anvar kompyuterida
-ekranda **"Oldimga kir"** degan pop-up oyna paydo bo'ladi.
+Direktor **telefon yoki SMS ishlatmasdan**, o'z kompyuteridан tashkilotdagi
+bir yoki bir nechta (yoki hamma) hodimga **istalgan xabarни** yuboradi.
+Xabar hodim kompyuterida ekranда pop-up oyna bo'lib chiqadi (masalan
+**"Oldimga kir"**, **"Yig'ilish boshlandi"** yoki boshqa istalgan matn), va
+hodim **"Hop, boraman"** tugmasi bilan javob qaytaradi.
 
-Aloqa faqat mahalliy tarmoq (LAN / Wi-Fi) orqali amalga oshadi — internet,
-telefon raqami yoki SMS kerak emas. Qo'shimcha dastur o'rnatish shart emas,
-faqat **Python 3** bo'lsa yetarli (tkinter va socket standart kutubxonada).
+Aloqa faqat mahalliy tarmoq (LAN / Wi-Fi) orqali — internet, telefon raqami
+yoki SMS kerak emas. Qo'shimcha dastur o'rnatish shart emas, faqat **Python 3**
+bo'lsa yetarli (tkinter va socket standart kutubxonada).
 
 ## Qanday ishlaydi (sxema)
 
 ```
-   Direktor kompyuteri                     Anvar kompyuteri
-  ┌────────────────────┐                 ┌────────────────────┐
-  │  direktor_call.py  │                 │ anvar_listener.py  │
-  │  [ CHAQIRISH ] ────┼── LAN/tarmoq ──►│  (kutish rejimi)   │
-  │                    │   xabar (TCP)   │                    │
-  └────────────────────┘                 │   ┌──────────────┐ │
-                                         │   │ 📢 Oldimga  │ │
-                                         │   │    kir       │ │  ← pop-up
-                                         │   └──────────────┘ │
-                                         └────────────────────┘
+                          ┌───────────────► Hodim 1  →  📢 pop-up  → "Hop, boraman"
+   Direktor kompyuteri    │
+  ┌────────────────────┐  │
+  │  📢 YUBORISH  ──────┼──┼───────────────► Hodim 2  →  📢 pop-up  → "Qabul qilindi"
+  │  (ko'p tanlov)     │  │   LAN (TCP)
+  └────────────────────┘  │
+        ▲                 └───────────────► Hodim 3  →  📢 pop-up  → "Keyinroq"
+        │
+        └── javoblar har bir hodim yonида ro'yxatда ko'rinadi
 ```
 
-1. Anvar kompyuterida `anvar_listener.py` ishlab turadi va xabarni kutadi.
-2. Direktor `direktor_call.py` dagi **CHAQIRISH** tugmasini bosadi.
-3. Xabar tarmoq orqali Anvar kompyuteriga boradi.
-4. Anvar ekranida darhol **"Oldimga kir"** pop-up oynasi chiqadi (ovoz bilan).
-5. Anvar pop-up'даги **"✅ Hop, boraman"** (yoki "⏳ Band edim, keyinroq")
-   tugmasini bosadi — bu **tasdiq direktorga qaytadi** va direktor oynasида
-   "✅ Anvar: Hop, boraman" bo'lib ko'rinadi (ovoz bilan).
-
-Ya'ni aloqa **ikki tomonlama**: direktor chaqiradi, Anvar javob beradi.
+1. Har bir hodim kompyuterida dastur **kutish rejimida** ishlab turadi.
+2. Direktor xabar matnini yozadi, kimlarга yuborishни belgilaydi (yoki
+   **"Hammasini"**) va **YUBORISH** tugmasini bosadi.
+3. Har bir belgilangan hodim ekranида pop-up chiqadi (ovoz bilan).
+4. Hodim **"✅ Hop, boraman"**, **"👍 Qabul qilindi"** yoki **"⏳ Keyinroq"**
+   tugmasini bosadi.
+5. Javob direktorга qaytadi va ro'yxatда o'sha hodim yonида ko'rinadi.
 
 ### Portlar
 
-| Port    | Yo'nalish              | Vazifasi                    |
-|---------|------------------------|-----------------------------|
-| `50555` | Direktor → Anvar       | chaqiruv ("Oldimga kir")    |
-| `50556` | Anvar → Direktor       | tasdiq ("Hop, boraman")     |
+| Port    | Yo'nalish            | Vazifasi                          |
+|---------|----------------------|-----------------------------------|
+| `50555` | Direktor → Hodim     | xabar (masalan "Oldimga kir")     |
+| `50556` | Hodim → Direktor     | javob (masalan "Hop, boraman")    |
 
-Firewall (Windows Defender) so'rasa, ikkala portga ham ruxsat bering.
+Firewall (Windows Defender) so'rasa, ikkala portга ham ruxsat bering.
 
-## Eng oson yo'l — bitta fayl (`chaqiruv.py`)
+## Ishlatish — bitta fayl (`chaqiruv.py`)
 
-Agar hammasini **bitta fayl** bilan qilmoqchi bo'lsangiz, `chaqiruv.py` dan
-foydalaning. Ikkala kompyuterга ham xuddi shu bir faylni qo'ying va oching:
+Barcha kompyuterларга xuddi shu bir faylni qo'ying va oching:
 
 ```bash
 python3 chaqiruv.py
 ```
 
 Ochilgan oynada rolni tanlaysiz:
-- **Men DIREKTORMAN** → Anvar IP'sini kiritib **CHAQIRISH** tugmasini bosasiz.
-- **Men ANVARMAN** → kutish rejimi; chaqiruv kelganда "Oldimga kir" pop-up chiqadi.
+
+- **👔 Men DIREKTORMAN** → xabar yuborish oynasi ochiladi:
+  - Xabar matnини yozasiz (yoki tayyorlaridan tanlaysiz).
+  - Hodimlar ro'yxatidан kimlarга yuborishни belgilaysiz (yoki "Hammasini").
+  - **YUBORISH** — har bir hodim ekранида pop-up chiqadi, javoblar ro'yxatда
+    ko'rinadi.
+- **🧑‍💼 Men HODIMMAN** → kutish rejimi; xabar kelганда pop-up chiqadi va
+  javob tugmalari bilan javob berasiz.
 
 Terminaldan to'g'ridan-to'g'ri ham:
 
 ```bash
-python3 chaqiruv.py anvar               # Anvar kompyuterida
-python3 chaqiruv.py direktor 192.168.1.50   # Direktor kompyuterida
+python3 chaqiruv.py hodim       # har bir hodim kompyuterida
+python3 chaqiruv.py direktor    # direktor kompyuterida
 ```
 
-> Quyidagi `anvar_listener.py` + `direktor_call.py` — o'sha tizimning ikki
-> alohida faylли ko'rinishi. Bittasini tanlang: yo `chaqiruv.py`, yo ikki fayl.
+### Hodimlar ro'yxati — `hodimlar.json`
+
+Direktor tomonда hodimlar ro'yxati `hodimlar.json` faylда (dastur yonида)
+saqlanadi. Uni **direktor oynасидан "➕ Qo'shish"** tugmasi bilan to'ldirsangiz
+bo'ladi, yoki qo'lда tahrirlаса bo'ladi:
+
+```json
+[
+  { "ism": "Anvar",   "ip": "192.168.1.50" },
+  { "ism": "Dilnoza", "ip": "192.168.1.51" },
+  { "ism": "Jasur",   "ip": "192.168.1.52" }
+]
+```
+
+Har bir hodim o'z **IP manzilини** kutish rejimидаги oynаda (yoki terminalда)
+ko'radi va direktorга aytadi. IP manzilni bilish:
+- Windows: `ipconfig`
+- Linux / macOS: `ip addr` yoki `ifconfig`
 
 ## `.exe` fayl yasash (Python o'rnatilmagan kompyuter uchun)
 
-Agar Direktor/Anvar kompyuterida Python bo'lmasa, `chaqiruv.py` dan mustaqil
+Agar kompyuterларда Python bo'lmasa, `chaqiruv.py` dan mustaqil
 `Chaqiruv.exe` yasab olsa bo'ladi — uni ikki marta bosib ishlatiladi.
+`hodimlar.json` fayli `.exe` yonида turishi kerak.
 
 **A) Windows kompyuterда o'zingiz yasash:**
 
-`build_exe.bat` faylini ikki marta bosing. U avtomatik ravishda PyInstaller'ni
-o'rnatib, `dist\Chaqiruv.exe` faylini yasaydi. Buyruq qo'lда:
+`build_exe.bat` faylini ikki marta bosing (PyInstaller'ni o'rnatib,
+`dist\Chaqiruv.exe` yasaydi). Buyruq qo'lда:
 
 ```bat
 pip install pyinstaller
@@ -85,91 +106,25 @@ pyinstaller --onefile --windowed --name Chaqiruv chaqiruv.py
 Repozitoriyada `.github/workflows/build-exe.yml` bor. GitHub'да:
 1. Repozitoriya → **Actions** bo'limi
 2. **"Chaqiruv.exe yasash"** → **Run workflow**
-3. Tugagach, **Artifacts** ostidan **Chaqiruv-exe** ni yuklab oling.
-
-`Chaqiruv.exe` ni Direktor va Anvar kompyuterlariga nusxalab, oddiy dastur
-kabi ishlatiladi (ochilganda rol tanlash oynasi chiqadi).
-
-## O'rnatish
-
-Ikkala kompyuter ham **bir tarmoqda** (bir Wi-Fi / bir LAN) bo'lishi shart.
-Python 3 o'rnatilgan bo'lishi kerak:
-
-```bash
-python3 --version
-```
-
-## Ishlatish
-
-### 1-qadam — Anvar kompyuterida
-
-```bash
-python3 anvar_listener.py
-```
-
-Dastur o'z **IP manzilini** ko'rsatadi, masalan:
-
-```
-  IP manzil (direktorga ayting): 192.168.1.50
-  Port:                          50555
-```
-
-Bu IP manzilni direktorga ayting. Dastur doim ochiq turishi kerak.
-
-### 2-qadam — Direktor kompyuterida
-
-**Grafik (tugmali) rejim** — tavsiya etiladi:
-
-```bash
-python3 direktor_call.py --gui
-```
-
-Ochilgan oynaga Anvar IP manzilini (`192.168.1.50`) kiriting va
-**CHAQIRISH** tugmasini bosing.
-
-**Yoki bitta buyruq bilan (terminaldan):**
-
-```bash
-python3 direktor_call.py --to 192.168.1.50
-```
-
-Xabar matnini o'zgartirish:
-
-```bash
-python3 direktor_call.py --to 192.168.1.50 --message "Oldimga kir"
-```
-
-## Sozlamalar
-
-| Parametr     | Tavsif                                  | Default        |
-|--------------|-----------------------------------------|----------------|
-| `--to`       | Anvar kompyuteri IP manzili             | —              |
-| `--port`     | Port raqami (ikkalasida bir xil bo'lsin)| `50555`        |
-| `--message`  | Yuboriladigan matn                      | `Oldimga kir`  |
-| `--gui`      | Direktorda grafik oynani ochish         | —              |
-
-Portni o'zgartirsangiz, ikkala tomonda ham bir xil bo'lishi kerak:
-
-```bash
-# Anvar
-python3 anvar_listener.py --port 50600
-# Direktor
-python3 direktor_call.py --to 192.168.1.50 --port 50600
-```
+3. Tugagach, **Artifacts** ostidан **Chaqiruv-exe** ni yuklab oling.
 
 ## Muammolarni bartaraf etish
 
-- **"Yuborilmadi" xatosi** — Anvar kompyuterida `anvar_listener.py` ishlab
-  turganini, IP manzil va port to'g'riligini tekshiring.
-- **Kompyuterlar bir-birini "ko'rmayapti"** — ikkalasi bir tarmoqda ekaniga
-  ishonch hosil qiling. Firewall (Windows Defender) `50555`-portga ruxsat
-  berishi kerak bo'lishi mumkin.
-- **IP manzilni bilish**:
-  - Windows: `ipconfig`
-  - Linux / macOS: `ip addr` yoki `ifconfig`
+- **Hodim yonида "✗ ulanmadi"** — o'sha hodim kompyuterида dastur "kutish
+  rejimи"да ochiqmi, IP manzil to'g'rimi, bir tarmoqdamisiz — tekshiring.
+- **Javob ko'rinmayapti** — hodim tomonда `50556`-portга (Direktor kompyuteriга
+  kirish) firewall to'sqinlik qilmayotganini tekshiring.
+- **Kompyuterlar bir-birини "ko'rmayapti"** — hammasi bir Wi-Fi/LAN da ekaniга
+  ishonch hosil qiling.
 
 ## Fayllar
 
-- `anvar_listener.py` — Anvar tomoni (qabul qiluvchi, pop-up chiqaradi).
-- `direktor_call.py` — Direktor tomoni (yuboruvchi, tugmali oyna yoki CLI).
+- `chaqiruv.py` — **asosiy** bitta faylли dastur (direktor + hodim, ko'p
+  tanlovли yuborish, javoblar, hodimlar ro'yxati). `.exe` shundан yasaladi.
+- `hodimlar.json` — hodimlar ro'yxati (dastur avtomatik yaratadi).
+- `build_exe.bat` — Windows'да `Chaqiruv.exe` yasash skripti.
+- `.github/workflows/build-exe.yml` — `.exe`ni avtomatik yasaydi.
+- `anvar_listener.py` + `direktor_call.py` — **oddiy 1↔1 variant** (faqat
+  bitta hodim bilan). Agar ko'p hodim kerak bo'lsa, `chaqiruv.py` dan
+  foydalaning.
 - `README.md` — shu qo'llanma.
