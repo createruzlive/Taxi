@@ -51,6 +51,31 @@ python3 chaqiruv.py direktor 192.168.1.50   # Direktor kompyuterida
 > Quyidagi `anvar_listener.py` + `direktor_call.py` — o'sha tizimning ikki
 > alohida faylли ko'rinishi. Bittasini tanlang: yo `chaqiruv.py`, yo ikki fayl.
 
+## `.exe` fayl yasash (Python o'rnatilmagan kompyuter uchun)
+
+Agar Direktor/Anvar kompyuterida Python bo'lmasa, `chaqiruv.py` dan mustaqil
+`Chaqiruv.exe` yasab olsa bo'ladi — uni ikki marta bosib ishlatiladi.
+
+**A) Windows kompyuterда o'zingiz yasash:**
+
+`build_exe.bat` faylini ikki marta bosing. U avtomatik ravishda PyInstaller'ni
+o'rnatib, `dist\Chaqiruv.exe` faylini yasaydi. Buyruq qo'lда:
+
+```bat
+pip install pyinstaller
+pyinstaller --onefile --windowed --name Chaqiruv chaqiruv.py
+```
+
+**B) Windows kompyuterисiz — GitHub orqali avtomatik:**
+
+Repozitoriyada `.github/workflows/build-exe.yml` bor. GitHub'да:
+1. Repozitoriya → **Actions** bo'limi
+2. **"Chaqiruv.exe yasash"** → **Run workflow**
+3. Tugagach, **Artifacts** ostidan **Chaqiruv-exe** ni yuklab oling.
+
+`Chaqiruv.exe` ni Direktor va Anvar kompyuterlariga nusxalab, oddiy dastur
+kabi ishlatiladi (ochilganda rol tanlash oynasi chiqadi).
+
 ## O'rnatish
 
 Ikkala kompyuter ham **bir tarmoqda** (bir Wi-Fi / bir LAN) bo'lishi shart.
