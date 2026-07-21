@@ -24,22 +24,34 @@ bo'lsa yetarli (tkinter va socket standart kutubxonada).
         └── javoblar har bir hodim yonида ro'yxatда ko'rinadi
 ```
 
-1. Har bir hodim kompyuterida dastur **kutish rejimida** ishlab turadi.
-2. Direktor xabar matnini yozadi, kimlarга yuborishни belgilaydi (yoki
-   **"Hammasini"**) va **YUBORISH** tugmasini bosadi.
-3. Har bir belgilangan hodim ekranида pop-up chiqadi (ovoz bilan).
-4. Hodim **"✅ Hop, boraman"**, **"👍 Qabul qilindi"** yoki **"⏳ Keyinroq"**
-   tugmasini bosadi.
-5. Javob direktorга qaytadi va ro'yxatда o'sha hodim yonида ko'rinadi.
+1. Har bir hodim kompyuterida dastur **kutish rejimida** ishlab turadi va
+   o'zini tarmoqqа **avtomatik e'lon qiladi**.
+2. Direktor oynасида hodimlar **o'zi paydo bo'ladi** (🟢 = onlayn) — IP'ни
+   qo'lда yozish shart emas.
+3. Direktor xabar matnини yozadi, kimlarга yuborishни belgilaydi (yoki
+   **"Hammasi"**) va **YUBORISH** tugmasини bosadi.
+4. Har bir belgilangan hodim ekранида pop-up chiqadi (ovoz bilan).
+5. Hodim **"✅ Hop, boraman"**, **"👍 Qabul qilindi"** yoki **"⏳ Keyinroq"**
+   tugmasини bosadi.
+6. Javob direktorга qaytadi va ro'yxатда o'sha hodim yonида ko'rinadi.
+
+### Avtomatik topish
+
+Hodim kompyuteri ishga tushsa, har 3 soniyада tarmoqqа o'zини (ism + IP)
+UDP orqali e'lon qiladi. Direktor bu e'lonларни eshitib, hodimni ro'yxатga
+avtomatik qo'shadi va **🟢 onlayn** deб belgilaydi. Ya'ni direktor odatда
+hech qanday IP kiritмаyди — hamma o'zи chiqadi. (Boshqa tarmoqдаги yoki
+o'chиq kompyuterни istasангиз, **"Qo'lда"** orqali IP bilan qo'shса bo'ladi.)
 
 ### Portlar
 
-| Port    | Yo'nalish            | Vazifasi                          |
-|---------|----------------------|-----------------------------------|
-| `50555` | Direktor → Hodim     | xabar (masalan "Oldimga kir")     |
-| `50556` | Hodim → Direktor     | javob (masalan "Hop, boraman")    |
+| Port    | Turi | Yo'nalish            | Vazifasi                       |
+|---------|------|----------------------|--------------------------------|
+| `50555` | TCP  | Direktor → Hodim     | xabar (masalan "Oldimga kir")  |
+| `50556` | TCP  | Hodim → Direktor     | javob (masalan "Hop, boraman") |
+| `50557` | UDP  | Hodim → Direktor     | avtomatik topish (e'lon)       |
 
-Firewall (Windows Defender) so'rasa, ikkala portга ham ruxsat bering.
+Firewall (Windows Defender) so'rasa, uchала portга ham ruxsat bering.
 
 ## Ishlatish — bitta fayl (`chaqiruv.py`)
 
@@ -66,22 +78,21 @@ python3 chaqiruv.py hodim       # har bir hodim kompyuterida
 python3 chaqiruv.py direktor    # direktor kompyuterida
 ```
 
-### Hodimlar ro'yxati — `hodimlar.json`
+### Qo'lда qo'shish — `hodimlar.json`
 
-Direktor tomonда hodimlar ro'yxati `hodimlar.json` faylда (dastur yonида)
-saqlanadi. Uni **direktor oynасидан "➕ Qo'shish"** tugmasi bilan to'ldirsangiz
-bo'ladi, yoki qo'lда tahrirlаса bo'ladi:
+Ko'p hollarда hech nima kiritmaysiz — hodimlar avtomatik topiladi. Lekin
+o'chиq yoki boshqa tarmoqdagi kompyuterni oldindan qo'shib qo'ymoqchi
+bo'lsangiz, direktor oynasидаги **"Qo'lда"** maydoniga ism + IP yozib
+**➕** tugmasini bosasiz. Bular `hodimlar.json` faylида saqlanadi:
 
 ```json
 [
-  { "ism": "Anvar",   "ip": "192.168.1.50" },
-  { "ism": "Dilnoza", "ip": "192.168.1.51" },
-  { "ism": "Jasur",   "ip": "192.168.1.52" }
+  { "ism": "Anvar", "ip": "192.168.1.50" },
+  { "ism": "Jasur", "ip": "192.168.1.52" }
 ]
 ```
 
-Har bir hodim o'z **IP manzilини** kutish rejimидаги oynаda (yoki terminalда)
-ko'radi va direktorга aytadi. IP manzilni bilish:
+IP manzilni bilish (kerak bo'lsa):
 - Windows: `ipconfig`
 - Linux / macOS: `ip addr` yoki `ifconfig`
 

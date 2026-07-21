@@ -1,656 +1,655 @@
 #!/usr/bin/env python3
-"""
-CHAQIRUV — Tashkilot ichki xabar tizimi (telefon/SMS'siz, bitta fayl)
-====================================================================
+# -*- coding: utf-8 -*-
+# chaqiruv dasturi - ichki tarmoqda xabar yuborish uchun
+# telefon/sms ishlatmaymiz, hammasi wifi orqali
+# ochib rolni tanlaysan: direktor yoki hodim
+#
+# portlar:
+PORT = 50555          # xabar shu portga boradi
+JAVOB_PORT = 50556    # hodim javobi shu yerga qaytadi
+QIDIRUV_PORT = 50557  # udp, avtomatik topish uchun
 
-Bitta fayl. Barcha kompyuterларга shu bir faylni qo'ying va ishga tushiring:
-
-    python3 chaqiruv.py
-
-Ochilgan oynada rolni tanlaysiz:
-  • "Men HODIMMAN"    -> kutish rejimi. Xabar kelganда ekranда pop-up chiqadi
-                         (masalan "Oldimga kir" yoki boshqa istalgan matn).
-                         "Hop, boraman" tugmasi bilan javob qaytaradi.
-  • "Men DIREKTORMAN" -> hodimlar ro'yxatidan kimlarга yuborishни belgilaysiz
-                         (yoki "Hammasini"), istalgan xabar matnини yozasiz va
-                         YUBORISH tugmasini bosasiz. Har bir hodim ekranида
-                         pop-up chiqadi, javoblar ro'yxatда ko'rinadi.
-
-Aloqa faqat mahalliy tarmoq (LAN/Wi-Fi) orqali. Internet, telefon, SMS
-kerak emas. Qo'shimcha kutubxona shart emas — faqat Python 3 (tkinter,
-socket standart kutubxonada mavjud).
-
-Hodimlar ro'yxati `hodimlar.json` faylда saqlanadi (dastur yonида). Uni
-direktor oynасидан qo'shsa/o'chirsa bo'ladi yoki qo'lда tahrirlаса bo'ladi.
-
-Terminaldan to'g'ridan-to'g'ri ham:
-    python3 chaqiruv.py hodim
-    python3 chaqiruv.py direktor
-"""
-
-import json
-import os
-import queue
 import socket
-import sys
+import json
 import threading
+import time
+import queue
+import sys, os
 
-DEFAULT_PORT = 50555             # Direktor -> Hodim (xabar)
-CONFIRM_PORT = DEFAULT_PORT + 1  # Hodim -> Direktor (javob/tasdiq)
-DEFAULT_MESSAGE = "Oldimga kir"
-SENDER_NAME = "Direktor"
+DEF_MSG = "Oldimga kir"
 
-# Tez-tez ishlatiladigan tayyor xabarlar (direktor bir bosishда tanlaydi)
-PRESET_MESSAGES = [
+# tez ishlatiladigan xabarlar (direktor tugmadan tanlaydi)
+tayyor_xabarlar = [
     "Oldimga kir",
     "Yig'ilish boshlandi, zalga keling",
     "Tushlik vaqti",
-    "Ish tugadi, uyга borishingiz mumkin",
+    "Ish tugadi, borsalar bo'ladi",
 ]
 
-
-# ---------------------------------------------------------------------------
-# Fayl joylashuvi (oddiy .py va PyInstaller .exe ikkovi uchun)
-# ---------------------------------------------------------------------------
-def base_dir():
-    if getattr(sys, "frozen", False):          # PyInstaller .exe
-        return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.abspath(__file__))
+# direktor tomonда topilgan hodimlar shu yerga yig'iladi (udp orqali)
+# ip -> {ism, ip, vaqt}
+topilgan = {}
+topilgan_lock = threading.Lock()
 
 
-HODIMLAR_FILE = os.path.join(base_dir(), "hodimlar.json")
-
-
-def load_hodimlar():
-    """hodimlar.json dan ro'yxatni o'qiydi. Bo'lmasa namuna yaratadi."""
-    if os.path.exists(HODIMLAR_FILE):
-        try:
-            with open(HODIMLAR_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            result = []
-            for item in data:
-                ism = str(item.get("ism", "")).strip()
-                ip = str(item.get("ip", "")).strip()
-                if ip:
-                    result.append({"ism": ism or ip, "ip": ip})
-            return result
-        except (ValueError, OSError):
-            pass
-    # Namuna ro'yxat
-    namuna = [
-        {"ism": "Anvar (namuna)", "ip": "192.168.1.50"},
-        {"ism": "Dilnoza (namuna)", "ip": "192.168.1.51"},
-    ]
-    save_hodimlar(namuna)
-    return namuna
-
-
-def save_hodimlar(hodimlar):
-    try:
-        with open(HODIMLAR_FILE, "w", encoding="utf-8") as f:
-            json.dump(hodimlar, f, ensure_ascii=False, indent=2)
-        return True
-    except OSError:
-        return False
-
-
-# ---------------------------------------------------------------------------
-# Tarmoq yordamchilari
-# ---------------------------------------------------------------------------
-def get_local_ip():
-    """Kompyuterning tarmoqdagi IP manzilini aniqlaydi (LAN uchun)."""
+def mening_ip():
+    # o'zimning lokal ip manzilim
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
-    except Exception:
+    except:
         ip = "127.0.0.1"
-    finally:
-        s.close()
+    s.close()
     return ip
 
 
-def get_hostname():
+def komp_nomi():
     try:
         return socket.gethostname()
-    except Exception:
+    except:
         return "hodim"
 
 
-def send_call(host, port, message, sender=SENDER_NAME, timeout=5):
-    """Bitta hodimга xabar yuboradi. (True, 'OK') yoki (False, xato) qaytaradi.
+# fayl qayerda tursin (py va exe uchun)
+if getattr(sys, "frozen", False):
+    APP_DIR = os.path.dirname(sys.executable)
+else:
+    APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
-    Payload ичіга direktorning IP'si (sender_ip) qo'shiladi — hodim
-    javob tugmasini bosганда shu manzilga tasdiq qaytaradi.
-    """
-    payload = json.dumps({
-        "message": message,
-        "sender": sender,
-        "sender_ip": get_local_ip(),
-    }).encode("utf-8")
+HODIMLAR_FAYL = os.path.join(APP_DIR, "hodimlar.json")
+
+
+def hodimlarni_oqi():
+    # qo'lda kiritilgan hodimlar json dan
+    if os.path.exists(HODIMLAR_FAYL):
+        try:
+            f = open(HODIMLAR_FAYL, "r", encoding="utf-8")
+            data = json.load(f)
+            f.close()
+            res = []
+            for x in data:
+                ip = str(x.get("ip", "")).strip()
+                ism = str(x.get("ism", "")).strip()
+                if ip != "":
+                    res.append({"ism": ism or ip, "ip": ip})
+            return res
+        except:
+            return []
+    return []
+
+
+def hodimlarni_saqla(royxat):
     try:
-        with socket.create_connection((host, port), timeout=timeout) as s:
-            s.sendall(payload)
-            s.shutdown(socket.SHUT_WR)
-            try:
-                s.settimeout(timeout)
-                reply = s.recv(16)
-            except socket.timeout:
-                reply = b""
-        return True, reply.decode("utf-8", errors="replace")
-    except (ConnectionRefusedError, socket.timeout, OSError) as e:
+        f = open(HODIMLAR_FAYL, "w", encoding="utf-8")
+        json.dump(royxat, f, ensure_ascii=False, indent=2)
+        f.close()
+    except:
+        print("saqlab bo'lmadi :(")
+
+
+# ========================= XABAR YUBORISH =========================
+def xabar_yubor(ip, matn):
+    # bitta hodimga xabar. (True/False, info) qaytaradi
+    paket = json.dumps({
+        "message": matn,
+        "sender": "Direktor",
+        "sender_ip": mening_ip(),
+    })
+    try:
+        s = socket.create_connection((ip, PORT), timeout=5)
+        s.sendall(paket.encode("utf-8"))
+        s.shutdown(socket.SHUT_WR)
+        try:
+            s.settimeout(5)
+            javob = s.recv(16)
+        except socket.timeout:
+            javob = b""
+        s.close()
+        return True, javob.decode("utf-8", "replace")
+    except Exception as e:
         return False, str(e)
 
 
-def send_confirm(host, port, text, who=None, timeout=5):
-    """Hodimdan direktorga javob yuboradi (masalan 'Hop, boraman')."""
-    if who is None:
-        who = get_hostname()
-    payload = json.dumps({"confirm": text, "from": who}).encode("utf-8")
+def javob_yubor(ip, matn):
+    # hodim -> direktor (masalan "Hop boraman")
+    paket = json.dumps({"confirm": matn, "from": komp_nomi()})
     try:
-        with socket.create_connection((host, port), timeout=timeout) as s:
-            s.sendall(payload)
-            s.shutdown(socket.SHUT_WR)
-        return True, None
-    except (ConnectionRefusedError, socket.timeout, OSError) as e:
-        return False, str(e)
+        s = socket.create_connection((ip, JAVOB_PORT), timeout=5)
+        s.sendall(paket.encode("utf-8"))
+        s.shutdown(socket.SHUT_WR)
+        s.close()
+        return True
+    except:
+        return False
 
 
-# ---------------------------------------------------------------------------
-# HODIM tomoni (qabul qiluvchi + pop-up)
-# ---------------------------------------------------------------------------
-def _listener_thread(sock, msg_queue):
+# ========================= HODIM TOMONI =========================
+def qabul_listener(sock, q):
+    # xabar kelsa navbatga qo'yamiz, keyin gui popup chiqaradi
     while True:
         try:
             conn, addr = sock.accept()
         except OSError:
             break
-        with conn:
-            data = b""
-            conn.settimeout(5)
-            try:
-                while True:
-                    chunk = conn.recv(1024)
-                    if not chunk:
-                        break
-                    data += chunk
-                    if len(data) > 65536:
-                        break
-            except socket.timeout:
-                pass
+        data = b""
+        conn.settimeout(5)
+        try:
+            while True:
+                b = conn.recv(1024)
+                if not b:
+                    break
+                data += b
+                if len(data) > 60000:
+                    break
+        except socket.timeout:
+            pass
 
-            text, sender, sender_ip = DEFAULT_MESSAGE, addr[0], addr[0]
-            payload = data.decode("utf-8", errors="replace").strip()
-            if payload:
-                try:
-                    obj = json.loads(payload)
-                    text = obj.get("message", DEFAULT_MESSAGE)
-                    sender = obj.get("sender", addr[0])
-                    sender_ip = obj.get("sender_ip", addr[0])
-                except (ValueError, AttributeError):
-                    text = payload
-            try:
-                conn.sendall(b"OK")
-            except OSError:
-                pass
-            print(f"[+] Xabar keldi: '{text}'  (yuboruvchi: {sender})")
-            msg_queue.put((text, sender, sender_ip))
+        matn = DEF_MSG
+        kim = addr[0]
+        kim_ip = addr[0]
+        try:
+            o = json.loads(data.decode("utf-8", "replace"))
+            matn = o.get("message", DEF_MSG)
+            kim = o.get("sender", addr[0])
+            kim_ip = o.get("sender_ip", addr[0])
+        except:
+            # oddiy matn ham bo'lishi mumkin
+            t = data.decode("utf-8", "replace").strip()
+            if t:
+                matn = t
+        try:
+            conn.sendall(b"OK")
+        except:
+            pass
+        conn.close()
+        print("xabar keldi:", matn, "(", kim, ")")
+        q.put((matn, kim, kim_ip))
 
 
-def _show_popup(text, sender, sender_ip):
-    """Diqqatni tortadigan qizil pop-up oyna (asosiy oqimda chaqirilsin).
+def ozini_elon_qil(stop):
+    # udp broadcast - direktor bizni avtomatik ko'rsin
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    ma_lumot = json.dumps({"tip": "elon", "ism": komp_nomi(), "ip": mening_ip()})
+    while not stop.is_set():
+        try:
+            s.sendto(ma_lumot.encode("utf-8"), ("255.255.255.255", QIDIRUV_PORT))
+            # ba'zi tarmoqda 255.255.255.255 ishlamaydi, shu uchun buni ham:
+            s.sendto(ma_lumot.encode("utf-8"), ("<broadcast>", QIDIRUV_PORT))
+        except:
+            pass
+        time.sleep(3)
+    s.close()
 
-    Javob tugmasi bosilganда direktorga (sender_ip:CONFIRM_PORT) tasdiq
-    yuboriladi va oynada natija ko'rsatiladi.
-    """
+
+def popup(matn, kim, kim_ip):
     import tkinter as tk
-
-    root = tk.Tk()
-    root.title("YANGI XABAR")
-    root.attributes("-topmost", True)
-    root.configure(bg="#b30000")
-    root.resizable(False, False)
-
+    r = tk.Tk()
+    r.title("YANGI XABAR")
+    r.attributes("-topmost", True)
+    r.configure(bg="#b30000")
+    r.resizable(False, False)
     w, h = 520, 340
-    root.update_idletasks()
-    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-    root.geometry(f"{w}x{h}+{(sw - w)//2}+{(sh - h)//3}")
-
+    sw = r.winfo_screenwidth(); sh = r.winfo_screenheight()
+    r.geometry("%dx%d+%d+%d" % (w, h, (sw-w)//2, (sh-h)//3))
     try:
-        root.bell()
-    except Exception:
+        r.bell()
+    except:
         pass
 
-    frame = tk.Frame(root, bg="#b30000")
-    frame.pack(expand=True, fill="both", padx=22, pady=18)
-    tk.Label(frame, text="📢  " + text, font=("Arial", 24, "bold"),
-             fg="white", bg="#b30000", wraplength=470,
-             justify="center").pack(pady=(6, 4))
-    tk.Label(frame, text=f"Yuboruvchi: {sender}", font=("Arial", 13),
+    fr = tk.Frame(r, bg="#b30000")
+    fr.pack(expand=True, fill="both", padx=22, pady=18)
+    tk.Label(fr, text="📢  " + matn, font=("Arial", 24, "bold"), fg="white",
+             bg="#b30000", wraplength=470, justify="center").pack(pady=(6, 4))
+    tk.Label(fr, text="Yuboruvchi: " + str(kim), font=("Arial", 13),
              fg="#ffe0e0", bg="#b30000").pack(pady=(0, 10))
 
-    status = tk.Label(frame, text="", font=("Arial", 11, "bold"),
-                      fg="#fff2b0", bg="#b30000")
-    status.pack(pady=(0, 8))
+    holat = tk.Label(fr, text="", font=("Arial", 11, "bold"), fg="#fff2b0",
+                     bg="#b30000")
+    holat.pack(pady=(0, 8))
 
-    btn_row = tk.Frame(frame, bg="#b30000")
-    btn_row.pack()
+    qator = tk.Frame(fr, bg="#b30000")
+    qator.pack()
 
-    def confirm(answer):
-        """Javobni direktorga yuboradi va oynani yopadi."""
-        status.config(text="Yuborilmoqda...", fg="#fff2b0")
-        root.update_idletasks()
-        ok, err = send_confirm(sender_ip, CONFIRM_PORT, answer)
+    def javob_ber(t):
+        holat.config(text="yuborilmoqda...", fg="#fff2b0")
+        r.update_idletasks()
+        ok = javob_yubor(kim_ip, t)
         if ok:
-            status.config(text="✓ Direktorga yuborildi", fg="#c8f7c8")
+            holat.config(text="✓ direktorga yuborildi", fg="#c8f7c8")
         else:
-            status.config(text="Direktorga yetkazib bo'lmadi", fg="#ffd0d0")
-        root.after(700, root.destroy)
+            holat.config(text="yuborib bo'lmadi", fg="#ffd0d0")
+        r.after(700, r.destroy)
 
-    yes_btn = tk.Button(btn_row, text="✅  Hop, boraman",
-                        font=("Arial", 15, "bold"),
-                        bg="white", fg="#0a7d0a", activebackground="#eaffea",
-                        relief="flat", padx=16, pady=9,
-                        command=lambda: confirm("Hop, boraman"))
-    yes_btn.pack(side="left", padx=5)
+    tk.Button(qator, text="✅  Hop, boraman", font=("Arial", 15, "bold"),
+              bg="white", fg="#0a7d0a", relief="flat", padx=16, pady=9,
+              command=lambda: javob_ber("Hop, boraman")).pack(side="left", padx=5)
+    tk.Button(qator, text="👍  Qabul qilindi", font=("Arial", 13), bg="#0a5d9c",
+              fg="white", relief="flat", padx=14, pady=9,
+              command=lambda: javob_ber("Qabul qilindi")).pack(side="left", padx=5)
+    tk.Button(qator, text="⏳  Keyinroq", font=("Arial", 13), bg="#7a0000",
+              fg="white", relief="flat", padx=14, pady=9,
+              command=lambda: javob_ber("Band edim, keyinroq")).pack(side="left", padx=5)
 
-    tk.Button(btn_row, text="👍  Qabul qilindi", font=("Arial", 13),
-              bg="#0a5d9c", fg="white", activebackground="#084b7d",
-              relief="flat", padx=14, pady=9,
-              command=lambda: confirm("Qabul qilindi")).pack(side="left", padx=5)
-
-    tk.Button(btn_row, text="⏳  Keyinroq", font=("Arial", 13),
-              bg="#7a0000", fg="white", activebackground="#5c0000",
-              relief="flat", padx=14, pady=9,
-              command=lambda: confirm("Band edim, keyinroq")).pack(side="left",
-                                                                   padx=5)
-
-    root.after(100, lambda: (root.focus_force(), yes_btn.focus_set()))
-    root.mainloop()
+    r.after(100, lambda: (r.focus_force()))
+    r.mainloop()
 
 
-def run_hodim(port=DEFAULT_PORT):
+def hodim_rejim():
+    import tkinter as tk
+    # tcp - xabar qabul qilish
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("0.0.0.0", port))
+    sock.bind(("0.0.0.0", PORT))
     sock.listen(5)
 
-    local_ip = get_local_ip()
-    print("=" * 52)
-    print("  HODIM — xabarni kutish rejimi")
-    print("=" * 52)
-    print(f"  Kompyuter nomi:                {get_hostname()}")
-    print(f"  IP manzil (direktorga ayting): {local_ip}")
-    print(f"  Port:                          {port}")
-    print("  Xabar kelishi bilan pop-up oyna chiqadi.")
-    print("  To'xtatish uchun: Ctrl + C")
-    print("=" * 52)
+    ip = mening_ip()
+    print("=" * 50)
+    print("  HODIM - kutish rejimi")
+    print("  komp:", komp_nomi(), " ip:", ip, " port:", PORT)
+    print("  to'xtatish: Ctrl+C")
+    print("=" * 50)
 
-    msg_queue = queue.Queue()
-    threading.Thread(target=_listener_thread, args=(sock, msg_queue),
-                     daemon=True).start()
+    q = queue.Queue()
+    threading.Thread(target=qabul_listener, args=(sock, q), daemon=True).start()
 
-    import tkinter as tk
+    # udp elon (avtomatik topish)
+    stop = threading.Event()
+    threading.Thread(target=ozini_elon_qil, args=(stop,), daemon=True).start()
 
-    root = tk.Tk()
-    root.title("Hodim — kutish rejimi")
-    root.configure(bg="#1e3d59")
-    root.resizable(False, False)
+    r = tk.Tk()
+    r.title("Hodim - kutish rejimi")
+    r.configure(bg="#1e3d59")
+    r.resizable(False, False)
     w, h = 440, 210
-    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-    root.geometry(f"{w}x{h}+{(sw - w)//2}+{(sh - h)//3}")
-    fr = tk.Frame(root, bg="#1e3d59")
+    sw = r.winfo_screenwidth(); sh = r.winfo_screenheight()
+    r.geometry("%dx%d+%d+%d" % (w, h, (sw-w)//2, (sh-h)//3))
+    fr = tk.Frame(r, bg="#1e3d59")
     fr.pack(expand=True, fill="both", padx=20, pady=20)
     tk.Label(fr, text="✅ Xabarni kutmoqda...", font=("Arial", 18, "bold"),
              fg="white", bg="#1e3d59").pack(pady=(6, 12))
-    tk.Label(fr, text=f"Kompyuter: {get_hostname()}",
+    tk.Label(fr, text="Komp: " + komp_nomi(), font=("Arial", 12),
+             fg="#cfe0ee", bg="#1e3d59").pack()
+    tk.Label(fr, text="IP: " + ip + "  (port " + str(PORT) + ")",
              font=("Arial", 12), fg="#cfe0ee", bg="#1e3d59").pack()
-    tk.Label(fr, text=f"Sizning IP: {local_ip}   (port {port})",
-             font=("Arial", 12), fg="#cfe0ee", bg="#1e3d59").pack()
-    tk.Label(fr, text="Bu oynani yopmang. Direktorga IP manzilingizni ayting.",
+    tk.Label(fr, text="Bu oynani yopmang. Direktor sizni ro'yxatda avtomatik ko'radi.",
              font=("Arial", 10), fg="#9fb8cc", bg="#1e3d59",
              wraplength=380).pack(pady=(12, 0))
 
-    def poll():
+    def tekshir():
         try:
             while True:
-                text, sender, sender_ip = msg_queue.get_nowait()
-                _show_popup(text, sender, sender_ip)
+                matn, kim, kim_ip = q.get_nowait()
+                popup(matn, kim, kim_ip)
         except queue.Empty:
             pass
-        root.after(300, poll)
+        r.after(300, tekshir)
 
-    root.after(300, poll)
+    r.after(300, tekshir)
     try:
-        root.mainloop()
+        r.mainloop()
     finally:
+        stop.set()
         sock.close()
 
 
-# Eski nom bilan chaqirilsa ham ishlashi uchun
-run_anvar = run_hodim
+# eski nomlar ham ishlashi uchun
+run_hodim = hodim_rejim
+run_anvar = hodim_rejim
 
 
-# ---------------------------------------------------------------------------
-# DIREKTOR tomoni (ko'p hodimga yuboruvchi GUI)
-# ---------------------------------------------------------------------------
-def _confirm_listener(sock, confirm_queue):
-    """Hodimlardan kelgan javoblarni qabul qiladi (matn, kim, ip)."""
+# ========================= DIREKTOR TOMONI =========================
+def javob_listener(sock, q):
+    # hodimlardan javob keladi
     while True:
         try:
             conn, addr = sock.accept()
         except OSError:
             break
-        with conn:
-            data = b""
-            conn.settimeout(5)
-            try:
-                while True:
-                    chunk = conn.recv(1024)
-                    if not chunk:
-                        break
-                    data += chunk
-                    if len(data) > 65536:
-                        break
-            except socket.timeout:
-                pass
-            text, who = "javob keldi", addr[0]
-            payload = data.decode("utf-8", errors="replace").strip()
-            if payload:
-                try:
-                    obj = json.loads(payload)
-                    text = obj.get("confirm", text)
-                    who = obj.get("from", addr[0])
-                except (ValueError, AttributeError):
-                    text = payload
-            print(f"[+] Javob: '{text}'  ({who} / {addr[0]})")
-            confirm_queue.put((text, who, addr[0]))
+        data = b""
+        conn.settimeout(5)
+        try:
+            while True:
+                b = conn.recv(1024)
+                if not b:
+                    break
+                data += b
+                if len(data) > 60000:
+                    break
+        except socket.timeout:
+            pass
+        conn.close()
+        matn = "javob"
+        kim = addr[0]
+        try:
+            o = json.loads(data.decode("utf-8", "replace"))
+            matn = o.get("confirm", matn)
+            kim = o.get("from", addr[0])
+        except:
+            pass
+        print("javob:", matn, "(", kim, "/", addr[0], ")")
+        q.put((matn, kim, addr[0]))
 
 
-def run_direktor(prefill_ip=""):
+def qidiruv_listener(stop):
+    # udp - hodimlarning elonini eshitamiz
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        s.bind(("", QIDIRUV_PORT))
+    except OSError as e:
+        print("qidiruv portini ochib bo'lmadi:", e)
+        return
+    s.settimeout(1)
+    myip = mening_ip()
+    while not stop.is_set():
+        try:
+            data, addr = s.recvfrom(2048)
+        except socket.timeout:
+            continue
+        except OSError:
+            break
+        try:
+            o = json.loads(data.decode("utf-8", "replace"))
+        except:
+            continue
+        if o.get("tip") != "elon":
+            continue
+        ip = o.get("ip", addr[0])
+        if ip == myip:
+            continue  # o'zimni qo'shmayman
+        ism = o.get("ism", ip)
+        with topilgan_lock:
+            topilgan[ip] = {"ism": ism, "ip": ip, "vaqt": time.time()}
+    s.close()
+
+
+def direktor_rejim(prefill=""):
     import tkinter as tk
     from tkinter import messagebox
 
-    hodimlar = load_hodimlar()
-    if prefill_ip and not any(h["ip"] == prefill_ip for h in hodimlar):
-        hodimlar.insert(0, {"ism": prefill_ip, "ip": prefill_ip})
+    hodimlar = hodimlarni_oqi()
+    if prefill and not any(h["ip"] == prefill for h in hodimlar):
+        hodimlar.insert(0, {"ism": prefill, "ip": prefill})
 
-    # Javoblarni kutish uchun fon listener'i
-    confirm_queue = queue.Queue()
-    csock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    csock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    confirm_active = True
+    # javob kutish (tcp)
+    jq = queue.Queue()
+    jsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    jsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    javob_ok = True
     try:
-        csock.bind(("0.0.0.0", CONFIRM_PORT))
-        csock.listen(8)
-        threading.Thread(target=_confirm_listener, args=(csock, confirm_queue),
-                         daemon=True).start()
+        jsock.bind(("0.0.0.0", JAVOB_PORT))
+        jsock.listen(8)
+        threading.Thread(target=javob_listener, args=(jsock, jq), daemon=True).start()
     except OSError as e:
-        confirm_active = False
-        print(f"[!] Javob portини ochib bo'lmadi ({CONFIRM_PORT}): {e}")
+        javob_ok = False
+        print("javob port band:", e)
 
-    result_queue = queue.Queue()   # (ip, 'sent'|'err', info)
+    # avtomatik topish (udp)
+    stop = threading.Event()
+    threading.Thread(target=qidiruv_listener, args=(stop,), daemon=True).start()
 
-    root = tk.Tk()
-    root.title("Direktor — tashkilotga xabar yuborish")
-    root.configure(bg="#1e3d59")
-    root.minsize(560, 600)
-    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-    w, h = 580, 680
-    root.geometry(f"{w}x{h}+{(sw - w)//2}+{max(0,(sh - h)//4)}")
+    natija_q = queue.Queue()  # (ip, ok/err)
 
-    outer = tk.Frame(root, bg="#1e3d59")
-    outer.pack(expand=True, fill="both", padx=18, pady=14)
+    r = tk.Tk()
+    r.title("Direktor - xabar yuborish")
+    r.configure(bg="#1e3d59")
+    r.minsize(560, 620)
+    sw = r.winfo_screenwidth(); sh = r.winfo_screenheight()
+    w, h = 580, 700
+    r.geometry("%dx%d+%d+%d" % (w, h, (sw-w)//2, max(0, (sh-h)//4)))
 
-    tk.Label(outer, text="📢 Tashkilotga xabar", font=("Arial", 20, "bold"),
+    top = tk.Frame(r, bg="#1e3d59")
+    top.pack(expand=True, fill="both", padx=18, pady=12)
+
+    tk.Label(top, text="📢 Tashkilotga xabar", font=("Arial", 20, "bold"),
              fg="white", bg="#1e3d59").pack(anchor="w")
 
-    # --- Xabar matni ---
-    tk.Label(outer, text="Xabar matni:", font=("Arial", 11),
-             fg="#cfe0ee", bg="#1e3d59").pack(anchor="w", pady=(10, 2))
-    msg_text = tk.Text(outer, font=("Arial", 12), height=3, wrap="word")
-    msg_text.insert("1.0", DEFAULT_MESSAGE)
-    msg_text.pack(fill="x")
+    # xabar matni
+    tk.Label(top, text="Xabar:", font=("Arial", 11), fg="#cfe0ee",
+             bg="#1e3d59").pack(anchor="w", pady=(8, 2))
+    msg_box = tk.Text(top, font=("Arial", 12), height=3, wrap="word")
+    msg_box.insert("1.0", DEF_MSG)
+    msg_box.pack(fill="x")
 
-    preset_row = tk.Frame(outer, bg="#1e3d59")
-    preset_row.pack(fill="x", pady=(6, 4))
-    tk.Label(preset_row, text="Tayyor:", font=("Arial", 10),
-             fg="#9fb8cc", bg="#1e3d59").pack(side="left", padx=(0, 4))
+    pr = tk.Frame(top, bg="#1e3d59")
+    pr.pack(fill="x", pady=(5, 3))
+    tk.Label(pr, text="Tayyor:", font=("Arial", 10), fg="#9fb8cc",
+             bg="#1e3d59").pack(side="left", padx=(0, 4))
 
-    def set_msg(t):
-        msg_text.delete("1.0", "end")
-        msg_text.insert("1.0", t)
+    def qoy(t):
+        msg_box.delete("1.0", "end")
+        msg_box.insert("1.0", t)
 
-    for p in PRESET_MESSAGES:
-        short = p if len(p) <= 18 else p[:16] + "…"
-        tk.Button(preset_row, text=short, font=("Arial", 9),
-                  bg="#2c5578", fg="white", activebackground="#37678f",
+    for p in tayyor_xabarlar:
+        nom = p if len(p) <= 16 else p[:15] + "…"
+        tk.Button(pr, text=nom, font=("Arial", 9), bg="#2c5578", fg="white",
                   relief="flat", padx=6, pady=2,
-                  command=lambda t=p: set_msg(t)).pack(side="left", padx=2)
+                  command=lambda t=p: qoy(t)).pack(side="left", padx=2)
 
-    # --- Kimga yuborish (hodimlar ro'yxati) ---
-    head = tk.Frame(outer, bg="#1e3d59")
-    head.pack(fill="x", pady=(10, 2))
-    tk.Label(head, text="Kimga yuborish:", font=("Arial", 11),
+    # kimga
+    hd = tk.Frame(top, bg="#1e3d59")
+    hd.pack(fill="x", pady=(10, 2))
+    tk.Label(hd, text="Kimga (🟢=onlayn, avtomatik topilgan):", font=("Arial", 11),
              fg="#cfe0ee", bg="#1e3d59").pack(side="left")
+    hammasi_var = tk.IntVar(value=1)
 
-    all_var = tk.IntVar(value=1)
+    def hammasini():
+        v = hammasi_var.get()
+        for ip in qatorlar:
+            qatorlar[ip]["var"].set(v)
 
-    def toggle_all():
-        val = all_var.get()
-        for r in rows:
-            r["var"].set(val)
-
-    tk.Checkbutton(head, text="Hammasini belgilash", variable=all_var,
-                   command=toggle_all, font=("Arial", 10), fg="#cfe0ee",
-                   bg="#1e3d59", selectcolor="#12263a",
-                   activebackground="#1e3d59",
+    tk.Checkbutton(hd, text="Hammasi", variable=hammasi_var, command=hammasini,
+                   font=("Arial", 10), fg="#cfe0ee", bg="#1e3d59",
+                   selectcolor="#12263a", activebackground="#1e3d59",
                    activeforeground="white").pack(side="right")
 
-    # Skrollanadigan ro'yxat
-    list_wrap = tk.Frame(outer, bg="#12263a", height=180)
-    list_wrap.pack(fill="both", expand=True, pady=(2, 6))
-    list_wrap.pack_propagate(False)
-    canvas = tk.Canvas(list_wrap, bg="#12263a", highlightthickness=0)
-    scrollbar = tk.Scrollbar(list_wrap, orient="vertical", command=canvas.yview)
-    inner = tk.Frame(canvas, bg="#12263a")
-    inner.bind("<Configure>",
-               lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-    canvas.create_window((0, 0), window=inner, anchor="nw", width=520)
-    canvas.configure(yscrollcommand=scrollbar.set)
-    canvas.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
+    # skrol ro'yxat
+    box = tk.Frame(top, bg="#12263a", height=200)
+    box.pack(fill="both", expand=True, pady=(2, 6))
+    box.pack_propagate(False)
+    kanvas = tk.Canvas(box, bg="#12263a", highlightthickness=0)
+    skr = tk.Scrollbar(box, orient="vertical", command=kanvas.yview)
+    ich = tk.Frame(kanvas, bg="#12263a")
+    ich.bind("<Configure>", lambda e: kanvas.configure(scrollregion=kanvas.bbox("all")))
+    kanvas.create_window((0, 0), window=ich, anchor="nw", width=520)
+    kanvas.configure(yscrollcommand=skr.set)
+    kanvas.pack(side="left", fill="both", expand=True)
+    skr.pack(side="right", fill="y")
 
-    rows = []          # har biri: {ism, ip, var, status_lbl}
-    ip_to_row = {}
+    qatorlar = {}   # ip -> {var, nom_lbl, holat_lbl, online}
 
-    def rebuild_rows():
-        for child in inner.winfo_children():
-            child.destroy()
-        rows.clear()
-        ip_to_row.clear()
-        for h in hodimlar:
-            row_fr = tk.Frame(inner, bg="#12263a")
-            row_fr.pack(fill="x", padx=6, pady=2)
-            var = tk.IntVar(value=1)
-            cb = tk.Checkbutton(row_fr, variable=var, bg="#12263a",
-                                selectcolor="#1e3d59",
-                                activebackground="#12263a")
-            cb.pack(side="left")
-            tk.Label(row_fr, text=f"{h['ism']}  ({h['ip']})",
-                     font=("Arial", 11), fg="white", bg="#12263a",
-                     width=26, anchor="w").pack(side="left")
-            st = tk.Label(row_fr, text="—", font=("Arial", 10),
-                          fg="#9fb8cc", bg="#12263a", anchor="w")
-            st.pack(side="left", fill="x", expand=True)
-            row = {"ism": h["ism"], "ip": h["ip"], "var": var, "status_lbl": st}
-            rows.append(row)
-            ip_to_row[h["ip"]] = row
+    def bitta_qator(ism, ip):
+        f = tk.Frame(ich, bg="#12263a")
+        f.pack(fill="x", padx=6, pady=2)
+        var = tk.IntVar(value=1)
+        tk.Checkbutton(f, variable=var, bg="#12263a", selectcolor="#1e3d59",
+                       activebackground="#12263a").pack(side="left")
+        nom = tk.Label(f, text="⚪ " + ism + "  (" + ip + ")", font=("Arial", 11),
+                       fg="white", bg="#12263a", width=28, anchor="w")
+        nom.pack(side="left")
+        hol = tk.Label(f, text="—", font=("Arial", 10), fg="#9fb8cc",
+                       bg="#12263a", anchor="w")
+        hol.pack(side="left", fill="x", expand=True)
+        qatorlar[ip] = {"var": var, "nom_lbl": nom, "holat_lbl": hol,
+                        "ism": ism, "online": False}
 
-    rebuild_rows()
+    # boshida qo'lda kiritilganlarni qo'yamiz
+    for h in hodimlar:
+        if h["ip"] not in qatorlar:
+            bitta_qator(h["ism"], h["ip"])
 
-    # --- Yangi hodim qo'shish ---
-    add_fr = tk.Frame(outer, bg="#1e3d59")
-    add_fr.pack(fill="x", pady=(2, 6))
-    tk.Label(add_fr, text="Yangi hodim:", font=("Arial", 10),
-             fg="#9fb8cc", bg="#1e3d59").pack(side="left")
-    name_e = tk.Entry(add_fr, font=("Arial", 10), width=12)
-    name_e.pack(side="left", padx=(4, 3))
-    name_e.insert(0, "Ism")
-    ip_e = tk.Entry(add_fr, font=("Arial", 10), width=14)
+    # qo'lda qo'shish
+    qq = tk.Frame(top, bg="#1e3d59")
+    qq.pack(fill="x", pady=(2, 6))
+    tk.Label(qq, text="Qo'lda:", font=("Arial", 10), fg="#9fb8cc",
+             bg="#1e3d59").pack(side="left")
+    ism_e = tk.Entry(qq, font=("Arial", 10), width=12)
+    ism_e.pack(side="left", padx=(4, 3))
+    ip_e = tk.Entry(qq, font=("Arial", 10), width=14)
     ip_e.pack(side="left", padx=3)
-    ip_e.insert(0, "IP manzil")
+    ip_e.insert(0, "IP")
 
-    def add_hodim():
-        ism = name_e.get().strip()
+    def qol_qosh():
         ip = ip_e.get().strip()
-        if not ip or ip == "IP manzil":
-            messagebox.showwarning("E'tibor", "IP manzilни kiriting.")
+        ism = ism_e.get().strip()
+        if ip == "" or ip == "IP":
+            messagebox.showwarning("e'tibor", "IP kiriting")
             return
+        if ip not in qatorlar:
+            bitta_qator(ism or ip, ip)
         hodimlar.append({"ism": ism or ip, "ip": ip})
-        save_hodimlar(hodimlar)
-        rebuild_rows()
-        name_e.delete(0, "end"); ip_e.delete(0, "end")
+        hodimlarni_saqla(hodimlar)
+        ism_e.delete(0, "end"); ip_e.delete(0, "end")
 
-    tk.Button(add_fr, text="➕ Qo'shish", font=("Arial", 10),
-              bg="#2a9d8f", fg="white", activebackground="#238377",
-              relief="flat", padx=8, command=add_hodim).pack(side="left", padx=3)
+    tk.Button(qq, text="➕", font=("Arial", 10), bg="#2a9d8f", fg="white",
+              relief="flat", padx=8, command=qol_qosh).pack(side="left", padx=3)
 
-    # --- Yuborish tugmasi ---
-    def send_one(row, message):
-        ok, info = send_call(row["ip"], DEFAULT_PORT, message)
-        result_queue.put((row["ip"], "sent" if ok else "err", info))
+    # yuborish
+    def bitta_yubor(ip, matn):
+        ok, info = xabar_yubor(ip, matn)
+        natija_q.put((ip, ok))
 
-    def on_send():
-        message = msg_text.get("1.0", "end").strip()
-        if not message:
-            messagebox.showwarning("E'tibor", "Xabar matni bo'sh.")
+    def yubor():
+        matn = msg_box.get("1.0", "end").strip()
+        if matn == "":
+            messagebox.showwarning("e'tibor", "xabar bo'sh")
             return
-        selected = [r for r in rows if r["var"].get()]
-        if not selected:
-            messagebox.showwarning("E'tibor", "Hech kim belgilanmagan.")
+        tanlangan = [ip for ip in qatorlar if qatorlar[ip]["var"].get()]
+        if len(tanlangan) == 0:
+            messagebox.showwarning("e'tibor", "hech kim tanlanmadi")
             return
-        for r in selected:
-            r["status_lbl"].config(text="yuborilmoqda...", fg="#ffd966")
-            threading.Thread(target=send_one, args=(r, message),
-                             daemon=True).start()
+        for ip in tanlangan:
+            qatorlar[ip]["holat_lbl"].config(text="yuborilmoqda...", fg="#ffd966")
+            threading.Thread(target=bitta_yubor, args=(ip, matn), daemon=True).start()
 
-    tk.Button(outer, text="📢  YUBORISH", font=("Arial", 16, "bold"),
-              bg="#e63946", fg="white", activebackground="#c92d3a",
-              relief="flat", pady=12, command=on_send).pack(fill="x", pady=(4, 4))
+    tk.Button(top, text="📢  YUBORISH", font=("Arial", 16, "bold"), bg="#e63946",
+              fg="white", relief="flat", pady=12, command=yubor).pack(fill="x",
+                                                                       pady=(4, 4))
 
-    info_txt = ("Javoblar yuqoridagi ro'yxatда har bir hodim yonида ko'rinadi."
-                if confirm_active
-                else "⚠ Javob porti band — javoblar ko'rinmasligi mumkin.")
-    tk.Label(outer, text=info_txt, font=("Arial", 9),
-             fg="#9fb8cc", bg="#1e3d59", wraplength=520).pack(anchor="w")
+    izoh = ("Hodimlar avtomatik topiladi. Javoblar shu ro'yxatda ko'rinadi."
+            if javob_ok else "⚠ Javob porti band, javob ko'rinmasligi mumkin.")
+    tk.Label(top, text=izoh, font=("Arial", 9), fg="#9fb8cc", bg="#1e3d59",
+             wraplength=520).pack(anchor="w")
 
-    # --- Natija va javoblarni yangilash ---
-    def poll():
-        # Yuborish natijalari
+    def tekshir():
+        # yuborish natijalari
         try:
             while True:
-                ip, kind, info = result_queue.get_nowait()
-                row = ip_to_row.get(ip)
-                if row:
-                    if kind == "sent":
-                        row["status_lbl"].config(text="✓ yuborildi", fg="#9be89b")
+                ip, ok = natija_q.get_nowait()
+                if ip in qatorlar:
+                    if ok:
+                        qatorlar[ip]["holat_lbl"].config(text="✓ yuborildi", fg="#9be89b")
                     else:
-                        row["status_lbl"].config(text="✗ ulanmadi", fg="#ff8a8a")
+                        qatorlar[ip]["holat_lbl"].config(text="✗ ulanmadi", fg="#ff8a8a")
         except queue.Empty:
             pass
-        # Hodim javoblari
+        # javoblar
         try:
             while True:
-                text, who, ip = confirm_queue.get_nowait()
-                row = ip_to_row.get(ip)
-                if row:
-                    row["status_lbl"].config(text=f"✅ {text}", fg="#7CFC8A")
+                matn, kim, ip = jq.get_nowait()
+                if ip in qatorlar:
+                    qatorlar[ip]["holat_lbl"].config(text="✅ " + matn, fg="#7CFC8A")
                 else:
-                    # Ro'yxatda yo'q hodim ham javob bergan bo'lishi mumkin
-                    print(f"[i] Ro'yxatda yo'q javob: {who} ({ip}): {text}")
+                    # ro'yxatda yo'q edi, qo'shib qo'yamiz
+                    bitta_qator(kim, ip)
+                    qatorlar[ip]["holat_lbl"].config(text="✅ " + matn, fg="#7CFC8A")
                 try:
-                    root.bell()
-                except Exception:
+                    r.bell()
+                except:
                     pass
         except queue.Empty:
             pass
-        root.after(300, poll)
+        # avtomatik topilganlarni ro'yxatga qo'shish + onlayn belgisi
+        with topilgan_lock:
+            hozir = time.time()
+            for ip in list(topilgan.keys()):
+                t = topilgan[ip]
+                if ip not in qatorlar:
+                    bitta_qator(t["ism"], ip)
+                    if hammasi_var.get() == 0:
+                        qatorlar[ip]["var"].set(0)
+                online = (hozir - t["vaqt"]) < 8
+                q = qatorlar[ip]
+                if online != q["online"]:
+                    q["online"] = online
+                    belgi = "🟢 " if online else "⚪ "
+                    q["nom_lbl"].config(text=belgi + q["ism"] + "  (" + ip + ")")
+        r.after(500, tekshir)
 
-    root.after(300, poll)
+    r.after(500, tekshir)
     try:
-        root.mainloop()
+        r.mainloop()
     finally:
+        stop.set()
         try:
-            csock.close()
-        except OSError:
+            jsock.close()
+        except:
             pass
 
 
-# ---------------------------------------------------------------------------
-# Rol tanlash oynasi (dastur shu bilan boshlanadi)
-# ---------------------------------------------------------------------------
-def run_chooser():
+# eski nom
+run_direktor = direktor_rejim
+
+
+# ========================= ROL TANLASH =========================
+def tanlov():
     import tkinter as tk
-
-    root = tk.Tk()
-    root.title("CHAQIRUV — rolni tanlang")
-    root.configure(bg="#12263a")
-    root.resizable(False, False)
+    r = tk.Tk()
+    r.title("CHAQIRUV")
+    r.configure(bg="#12263a")
+    r.resizable(False, False)
     w, h = 400, 340
-    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-    root.geometry(f"{w}x{h}+{(sw - w)//2}+{(sh - h)//3}")
-
-    fr = tk.Frame(root, bg="#12263a")
+    sw = r.winfo_screenwidth(); sh = r.winfo_screenheight()
+    r.geometry("%dx%d+%d+%d" % (w, h, (sw-w)//2, (sh-h)//3))
+    fr = tk.Frame(r, bg="#12263a")
     fr.pack(expand=True, fill="both", padx=28, pady=26)
-    tk.Label(fr, text="CHAQIRUV tizimi", font=("Arial", 22, "bold"),
-             fg="white", bg="#12263a").pack(pady=(0, 6))
+    tk.Label(fr, text="CHAQIRUV tizimi", font=("Arial", 22, "bold"), fg="white",
+             bg="#12263a").pack(pady=(0, 6))
     tk.Label(fr, text="Bu kompyuterda kim ishlaydi?", font=("Arial", 12),
              fg="#9fb8cc", bg="#12263a").pack(pady=(0, 22))
 
-    choice = {"role": None}
+    natija = {"r": None}
 
-    def pick(role):
-        choice["role"] = role
-        root.destroy()
+    def tanla(x):
+        natija["r"] = x
+        r.destroy()
 
     tk.Button(fr, text="👔  Men DIREKTORMAN\n(xabar yuboraman)",
-              font=("Arial", 14, "bold"), bg="#e63946", fg="white",
-              activebackground="#c92d3a", relief="flat", pady=12,
-              command=lambda: pick("direktor")).pack(fill="x", pady=(0, 14))
+              font=("Arial", 14, "bold"), bg="#e63946", fg="white", relief="flat",
+              pady=12, command=lambda: tanla("direktor")).pack(fill="x", pady=(0, 14))
     tk.Button(fr, text="🧑‍💼  Men HODIMMAN\n(xabar kutaman)",
-              font=("Arial", 14, "bold"), bg="#2a9d8f", fg="white",
-              activebackground="#238377", relief="flat", pady=12,
-              command=lambda: pick("hodim")).pack(fill="x")
+              font=("Arial", 14, "bold"), bg="#2a9d8f", fg="white", relief="flat",
+              pady=12, command=lambda: tanla("hodim")).pack(fill="x")
 
-    root.mainloop()
-    return choice["role"]
+    r.mainloop()
+    return natija["r"]
 
 
-# ---------------------------------------------------------------------------
 def main():
-    args = sys.argv[1:]
-    role = args[0].lower() if args else None
+    a = sys.argv[1:]
+    rol = a[0].lower() if len(a) > 0 else None
 
-    if role in ("hodim", "anvar", "h", "a"):
-        run_hodim()
+    if rol in ("hodim", "anvar", "h"):
+        hodim_rejim()
         return
-    if role in ("direktor", "d"):
-        prefill = args[1] if len(args) > 1 else ""
-        run_direktor(prefill)
+    if rol in ("direktor", "d"):
+        p = a[1] if len(a) > 1 else ""
+        direktor_rejim(p)
         return
 
-    chosen = run_chooser()
-    if chosen == "hodim":
-        run_hodim()
-    elif chosen == "direktor":
-        run_direktor()
+    x = tanlov()
+    if x == "hodim":
+        hodim_rejim()
+    elif x == "direktor":
+        direktor_rejim()
     else:
-        print("Rol tanlanmadi. Chiqildi.")
+        print("hech nima tanlanmadi")
 
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n[i] To'xtatildi.")
+        print("\nto'xtatildi")
