@@ -134,6 +134,8 @@ Repozitoriyada `.github/workflows/build-exe.yml` bor. GitHub'да:
   tanlovли yuborish, javoblar, hodimlar ro'yxati). `.exe` shundан yasaladi.
 - `hodimlar.json` — hodimlar ro'yxati (dastur avtomatik yaratadi).
 - `build_exe.bat` — Windows'да `Chaqiruv.exe` yasash skripti.
+- `avtostart_ornat.bat` — hodim kompyuterида dasturни Windows bilan avtomatik
+  ishга tushirадиган qilади (Startup'га yorлиq qo'yади).
 - `EXE_QOLLANMA.md` — `.exe` yasash bo'yicha to'liq qadamба-qadam qo'llanma.
 - `.github/workflows/build-exe.yml` — `.exe`ni avtomatik yasaydi.
 - `anvar_listener.py` + `direktor_call.py` — **oddiy 1↔1 variant** (faqat

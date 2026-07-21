@@ -82,6 +82,19 @@ papkада** turиши kerak.
 
 ---
 
+## Avtomatik ishga tushirish (hodimlar uchun)
+
+Hodimlar har kuni qo'lda ochishni unutmasligi uchun, kompyuter yoqilganда
+dastur o'zi "Hodim" rejimida ishga tushsin. Buning uchun **hodim
+kompyuterida bir marta** `avtostart_ornat.bat` ni bosing — u yorliqni
+Windows'ning Startup papkasiga qo'yadi (`Chaqiruv.exe hodim`).
+
+O'chirish kerak bo'lsa: **Win+R** → `shell:startup` → ochilgan papkadan
+"Chaqiruv" yorlig'ini o'chiring.
+
+> `avtostart_ornat.bat` ni `Chaqiruv.exe` bilan bir papkada saqlang
+> (yoki `dist\` yonida).
+
 ## Tez-tez uchrايдиган muammolar
 
 **Antivirus / Windows Defender exe'ни o'chirса yoki ogohlantirса.**
