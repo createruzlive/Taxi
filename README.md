@@ -28,6 +28,29 @@ faqat **Python 3** bo'lsa yetarli (tkinter va socket standart kutubxonada).
 3. Xabar tarmoq orqali Anvar kompyuteriga boradi.
 4. Anvar ekranida darhol **"Oldimga kir"** pop-up oynasi chiqadi (ovoz bilan).
 
+## Eng oson yo'l — bitta fayl (`chaqiruv.py`)
+
+Agar hammasini **bitta fayl** bilan qilmoqchi bo'lsangiz, `chaqiruv.py` dan
+foydalaning. Ikkala kompyuterга ham xuddi shu bir faylni qo'ying va oching:
+
+```bash
+python3 chaqiruv.py
+```
+
+Ochilgan oynada rolni tanlaysiz:
+- **Men DIREKTORMAN** → Anvar IP'sini kiritib **CHAQIRISH** tugmasini bosasiz.
+- **Men ANVARMAN** → kutish rejimi; chaqiruv kelganда "Oldimga kir" pop-up chiqadi.
+
+Terminaldan to'g'ridan-to'g'ri ham:
+
+```bash
+python3 chaqiruv.py anvar               # Anvar kompyuterida
+python3 chaqiruv.py direktor 192.168.1.50   # Direktor kompyuterida
+```
+
+> Quyidagi `anvar_listener.py` + `direktor_call.py` — o'sha tizimning ikki
+> alohida faylли ko'rinishi. Bittasini tanlang: yo `chaqiruv.py`, yo ikki fayl.
+
 ## O'rnatish
 
 Ikkala kompyuter ham **bir tarmoqda** (bir Wi-Fi / bir LAN) bo'lishi shart.
