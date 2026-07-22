@@ -284,11 +284,25 @@ def popup(parent, matn, kim, kim_ip):
 
 def hodim_rejim():
     import tkinter as tk
+    from tkinter import messagebox
     # tcp - xabar qabul qilish
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("0.0.0.0", PORT))
-    sock.listen(5)
+    try:
+        sock.bind(("0.0.0.0", PORT))
+        sock.listen(5)
+    except OSError as e:
+        # eng ko'p uchraydigan sabab: dastur allaqachon fonda ishlayapti
+        # (port band). Jimda o'lmasin - ogohlantiramiz.
+        rr = tk.Tk(); rr.withdraw()
+        messagebox.showerror(
+            "Chaqiruv - ishga tushmadi",
+            "Xabar qabul qilish porti (%d) band.\n\n"
+            "Sabab: dastur allaqachon fonda ochiq bo'lishi mumkin.\n"
+            "Vazifalar dispetcherida barcha 'pythonw.exe' / 'Python' ni\n"
+            "yopib, qaytadan urining.\n\nTexnik: %s" % (PORT, e))
+        rr.destroy()
+        return
 
     ip = mening_ip()
     print("=" * 50)
