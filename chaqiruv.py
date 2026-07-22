@@ -226,9 +226,11 @@ def ozini_elon_qil(stop):
     s.close()
 
 
-def popup(matn, kim, kim_ip):
+def popup(parent, matn, kim, kim_ip):
+    # DIQQAT: bu Toplevel (bola oyna), Tk() emas! Aks holda ikkinchi
+    # Tk() ochilib, birinchi popupdan keyin tinglash to'xtab qolardi.
     import tkinter as tk
-    r = tk.Tk()
+    r = tk.Toplevel(parent)
     r.title("YANGI XABAR")
     r.attributes("-topmost", True)
     r.configure(bg="#b30000")
@@ -276,7 +278,8 @@ def popup(matn, kim, kim_ip):
               command=lambda: javob_ber("Band edim, keyinroq")).pack(side="left", padx=5)
 
     r.after(100, lambda: (r.focus_force()))
-    r.mainloop()
+    # mainloop CHAQIRILMAYDI - asosiy oyna (hodim_rejim) allaqachon
+    # mainloop'da ishlayapti, popup shunчaki uning ustida chiqadi.
 
 
 def hodim_rejim():
@@ -311,7 +314,7 @@ def hodim_rejim():
         try:
             while True:
                 matn, kim, kim_ip = q.get_nowait()
-                popup(matn, kim, kim_ip)
+                popup(r, matn, kim, kim_ip)   # r = asosiy (yashirin) oyna
         except queue.Empty:
             pass
         r.after(300, tekshir)
