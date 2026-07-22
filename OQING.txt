@@ -1,0 +1,72 @@
+========================================================
+  CHAQIRUV — ichki tarmoq xabar tizimi (Python usuli)
+========================================================
+
+Bu to'plam ichida:
+  - chaqiruv.py                (asosiy dastur)
+  - ishga_tushir_hodim.bat     (hodim kompyuterida)
+  - ishga_tushir_direktor.bat  (direktor kompyuterida)
+  - OQING.txt                  (shu fayl)
+
+--------------------------------------------------------
+0) HAR BIR KOMPYUTERDA (bir marta)
+--------------------------------------------------------
+  - Python 3 o'rnatilgan bo'lishi kerak:
+      https://python.org  ->  yuklab oling  ->  o'rnatishda
+      "Add Python to PATH" katakchasini BELGILANG (muhim!).
+  - Bu to'plamdagi HAMMA fayllarni bitta papkaga chiqaring
+    (masalan C:\Chaqiruv\). Fayllar bir papkada tursin.
+
+  Nega Python? Chunki "Chaqiruv.exe" ni Windows "Smart App
+  Control" ba'zan bloklaydi. Python skript esa bloklanmaydi.
+
+--------------------------------------------------------
+1) HODIM kompyuterida
+--------------------------------------------------------
+  - "ishga_tushir_hodim.bat" ni ikki marta bosing.
+  - Dastur FONDA ishlaydi (oyna ko'rinmaydi).
+  - Direktor xabar yuborganda ekranda pop-up chiqadi,
+    "Hop, boraman" tugmasi bilan javob berasiz.
+  - Birinchi marta firewall so'rasa -> "Ruxsat berish".
+
+  Kompyuter yoqilganda o'zi ishga tushishi uchun:
+    Win+R -> shell:startup -> Enter
+    -> "ishga_tushir_hodim.bat" YORLIG'INI shu papkaga qo'ying.
+    (bat ustida o'ng tugma -> "Yorliq yaratish" -> ko'chiring)
+
+--------------------------------------------------------
+2) DIREKTOR kompyuterida
+--------------------------------------------------------
+  - "ishga_tushir_direktor.bat" ni ikki marta bosing.
+  - PAROL so'raydi (pastga qarang).
+  - Xabar yozasiz, kimga borishini belgilaysiz (yoki "Hammasi")
+    va YUBORISH tugmasini bosasiz.
+  - Hodimlar bir tarmoqda yoqiq bo'lsa ro'yxatda o'zi chiqadi
+    (yashil belgi = onlayn).
+
+--------------------------------------------------------
+3) PAROL (MUHIM)
+--------------------------------------------------------
+  Direktor rejimi parol bilan himoyalangan. Standart parol:
+
+        parol123
+
+  BUNI O'ZGARTIRING! chaqiruv.py ni Bloknot bilan oching,
+  quyidagi qatorni toping va o'zingizning maxfiy so'zingizga
+  o'zgartiring, so'ng saqlang:
+
+        DIREKTOR_PAROL = "parol123"
+
+  Faqat shu parolni bilgan odam direktor bo'la oladi.
+  (Hodimlar bilmasa, direktor nomidan xabar yubora olmaydi.)
+
+--------------------------------------------------------
+4) SHARTLAR
+--------------------------------------------------------
+  - Hamma kompyuter bitta Wi-Fi / LAN da bo'lishi shart.
+  - Kerakli portlar: 50555, 50556 (TCP), 50557 (UDP).
+    Firewall so'raganda ruxsat bering.
+
+Savol bo'lsa yoki ishlamasa — odatda sabab firewall yoki
+kompyuterlar boshqa-boshqa tarmoqda ekani.
+========================================================
